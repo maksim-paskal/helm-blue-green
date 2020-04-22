@@ -1,0 +1,16 @@
+version: v1
+host: http-echo.cluster-test.com
+
+blueGreen:
+  enabled: true
+  version: "{{ .Values.version }}"
+  hpa:
+    enabled: true
+    minReplicas:  2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+  services:
+  # - deploymentName: test # required
+  #   minReplicas: 1 # defaults 1
+  #   serviceName: paket # defaults deploymentName
+  - deploymentName: http-echo

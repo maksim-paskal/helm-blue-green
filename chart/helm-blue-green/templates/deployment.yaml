@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: http-echo
+spec:
+  selector:
+    matchLabels:
+      app: http-echo
+  replicas: 0
+  template:
+    metadata:
+      labels:
+        app: http-echo
+    spec:
+      containers:
+      - name: http
+        image: hashicorp/http-echo
+        args:
+        - --text=version={{ .Values.version }}
+        ports:
+        - containerPort: 5678
+        readinessProbe:
+          tcpSocket:
+            port: 5678
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: http-echo
+  labels:
+    app: http-echo
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5678
+    protocol: TCP
+  selector:
+    app: http-echo
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: http-echo
+  labels:
+    app: http-echo
+spec:
+  rules:
+  - host: {{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: http-echo
+          servicePort: 5678

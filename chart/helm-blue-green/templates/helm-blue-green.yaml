@@ -1,0 +1,143 @@
+{{- if .Values.blueGreen.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: helm-blue-green
+  annotations:
+    "helm.sh/hook": post-upgrade,post-install
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: helm-blue-green
+    spec:
+      restartPolicy: Never
+      serviceAccountName: helm-blue-green
+      containers:
+      - name: helm-blue-green
+        image: paskalmaksim/helm-blue-green:v1.0.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          set -ex
+          namespace={{ .Release.Namespace }}
+          version={{ tpl .Values.blueGreen.version . }}
+
+          {{ if hasKey (index .Values.blueGreen.services 0) "serviceName" }}
+          leader={{ (index .Values.blueGreen.services 0).serviceName }}
+          {{ else }}
+          leader={{ (index .Values.blueGreen.services 0).deploymentName }}
+          {{ end }}
+
+          version_current=`kubectl -n $namespace get svc $leader --output=jsonpath={.spec.selector.version}`
+
+          # if current release - changes already appled
+          if [ ! -z "$version_current" ] && [ "$version_current" = "$version" ]; then
+            echo changes already appled
+            exit 0
+          fi
+
+          # switch deployments
+          {{ range .Values.blueGreen.services }}
+          # Deployment {{ .deploymentName }}
+          deploymentName={{ .deploymentName }}
+          {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas=1{{end}}
+          {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
+          deploymentVersion=$deploymentName-$version
+          #debug##
+          kubectl -n $namespace scale deploy $deploymentName --replicas=0 || true
+          kubectl -n $namespace delete deploy $deploymentVersion || true
+          ########
+          kubectl -n $namespace get deploy $deploymentName -o yaml | \
+          sed "s/name: $deploymentName\$/name: $deploymentVersion/" | \
+          kubectl apply -f - || true
+          kubectl -n $namespace label deploy $deploymentVersion version=$version
+          kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"version\": \"$version\"}}}}}"
+          kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"selector\":{\"matchLabels\":{\"version\": \"$version\"}}}}"
+          kubectl -n $namespace scale --current-replicas=0 --replicas=$minReplicas deployment $deploymentVersion || true
+          {{ end }}
+
+          # wait while deployments will be available
+          kubectl -n $namespace wait --for=condition=available deployment -lversion=$version --timeout=600s
+
+          {{ range .Values.blueGreen.services }}
+          # switch to version
+          {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
+          kubectl -n $namespace patch service $serviceName -p "{\"spec\":{\"selector\":{\"version\": \"$version\"}}}"
+          {{ end }}
+
+          # delete old deployment
+          if [ ! -z "$version_current" ] && [ ! "$version_current" = "$version" ]; then
+            {{ range .Values.blueGreen.services }}
+            kubectl -n $namespace delete deployment {{ .deploymentName }}-$version_current || true
+            {{ end }}
+          fi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name:  helm-blue-green
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: helm-blue-green
+rules:
+- apiGroups: [ "extensions" ]
+  resources: ["deployments"]
+  verbs: [ "get","list","create","delete","patch","watch"]
+- apiGroups: [ "autoscaling" ]
+  resources: ["horizontalpodautoscalers"]
+  verbs: [ "delete","get","create","delete","patch" ]
+- apiGroups: [ "" ]
+  resources: ["pods"]
+  verbs: [ "get","list","watch"]
+- apiGroups: [ "extensions" ]
+  resources: ["deployments/scale"]
+  verbs: [ "update", "get" ]
+- apiGroups: [ "" ]
+  resources: ["services"]
+  verbs: [ "get","patch" ]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: helm-post-job
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: helm-blue-green
+subjects:
+- kind: ServiceAccount
+  name: helm-blue-green
+  namespace: {{ .Release.Namespace }}
+
+{{- if .Values.blueGreen.hpa.enabled }}
+{{ range .Values.blueGreen.services }}
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .deploymentName }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .deploymentName }}-{{ tpl $.Values.blueGreen.version $ }}
+  minReplicas: {{ $.Values.blueGreen.hpa.minReplicas }}
+  maxReplicas: {{ $.Values.blueGreen.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ $.Values.blueGreen.hpa.targetCPUUtilizationPercentage }}
+{{ end }}
+{{- end }}
+{{- end -}}
