@@ -1,10 +1,10 @@
 # Blue/Green installations with helm only
-
+This type of installation is used for switch users to new version in one moment (kubernetes RollingUpdate strategy can simultaneously routing requests to new and to old version)
 
 ## Test Blue/Green
-You need kubernetes cluster v1.15 with helm and ingress
+You need kubernetes cluster v1.15+ with helm v2.16+ and Ingress
 
-For example use host name http-echo.cluster-test.com
+For example use host name `http-echo.cluster-test.com`
 
 install application version v1
 ```
@@ -34,3 +34,9 @@ helm upgrade --install helm-blue-green \
 --set version=v3 \
 chart/helm-blue-green
 ```
+
+## Clearing cluster after test
+```
+helm delete --purge helm-blue-green
+kubectl delete ns helm-blue-green
+````

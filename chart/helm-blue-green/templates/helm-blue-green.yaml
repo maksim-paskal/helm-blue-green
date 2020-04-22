@@ -48,10 +48,7 @@ spec:
           {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas=1{{end}}
           {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
           deploymentVersion=$deploymentName-$version
-          #debug##
-          kubectl -n $namespace scale deploy $deploymentName --replicas=0 || true
-          kubectl -n $namespace delete deploy $deploymentVersion || true
-          ########
+
           kubectl -n $namespace get deploy $deploymentName -o yaml | \
           sed "s/name: $deploymentName\$/name: $deploymentVersion/" | \
           kubectl apply -f - || true
