@@ -39,4 +39,14 @@ chart/helm-blue-green
 ```
 helm delete --purge helm-blue-green
 kubectl delete ns helm-blue-green
-````
+```
+
+## Known issues
+* helm rollback doesn't work, version deployments is created by kubernetes job - helm can rollback only objects that was installed only by helm - for rollback - you need install requred version, for example
+```
+helm upgrade --install helm-blue-green \
+--namespace helm-blue-green \
+--set host=http-echo.cluster-test.com \
+--set version={ROLLBACK_VERSION} \
+chart/helm-blue-green
+```
