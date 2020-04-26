@@ -45,7 +45,7 @@ spec:
           {{ range .Values.blueGreen.services }}
           # Deployment {{ .deploymentName }}
           deploymentName={{ .deploymentName }}
-          {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas=1{{end}}
+          {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas={{ $.Values.blueGreen.minReplicas }}{{end}}
           {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
           deploymentVersion=$deploymentName-$version
 
