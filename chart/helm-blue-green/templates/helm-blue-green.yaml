@@ -73,6 +73,11 @@ spec:
             kubectl -n $namespace delete deployment {{ .deploymentName }}-$version_current || true
             {{ end }}
           fi
+          
+          # delete original deployment
+          {{ range .Values.blueGreen.services }}
+          kubectl -n $namespace delete deployment {{ .deploymentName }} || true
+          {{ end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
