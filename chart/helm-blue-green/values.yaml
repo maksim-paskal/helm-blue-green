@@ -5,6 +5,7 @@ blueGreen:
   enabled: true
   version: "{{ .Values.version }}"
   minReplicas: 2
+  extraCommand: []
   hpa:
     enabled: true
     minReplicas: 2

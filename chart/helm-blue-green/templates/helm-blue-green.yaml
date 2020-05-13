@@ -1,4 +1,5 @@
 {{- if .Values.blueGreen.enabled -}}
+# https://github.com/maksim-paskal/helm-blue-green
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -17,7 +18,7 @@ spec:
       serviceAccountName: helm-blue-green
       containers:
       - name: helm-blue-green
-        image: paskalmaksim/helm-blue-green:v1.0.2
+        image: paskalmaksim/helm-blue-green:v1.0.3
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -49,9 +50,12 @@ spec:
           {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
           deploymentVersion=$deploymentName-$version
 
-          kubectl -n $namespace get deploy $deploymentName -o yaml | \
-          sed "s/name: $deploymentName\$/name: $deploymentVersion/" | \
-          kubectl apply -f - || true
+          kubectl -n $namespace get deploy $deploymentName -o json | jq "\
+          .metadata.name=\"$deploymentVersion\"|\
+          .spec.template.metadata.labels.version=\"$version\"|\
+          .spec.selector.matchLabels.version=\"$version\"\
+          " | kubectl apply -f -
+
           kubectl -n $namespace label deploy $deploymentVersion version=$version
           kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"version\": \"$version\"}}}}}"
           kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"selector\":{\"matchLabels\":{\"version\": \"$version\"}}}}"
@@ -78,6 +82,11 @@ spec:
           {{ range .Values.blueGreen.services }}
           kubectl -n $namespace delete deployment {{ .deploymentName }} || true
           {{ end }}
+
+          #extraCommand
+{{- range .Values.blueGreen.extraCommand }}
+          {{ tpl . $ }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -90,7 +99,7 @@ kind: Role
 metadata:
   name: helm-blue-green
 rules:
-- apiGroups: [ "extensions" ]
+- apiGroups: [ "apps" ]
   resources: ["deployments"]
   verbs: [ "get","list","create","delete","patch","watch"]
 - apiGroups: [ "autoscaling" ]
@@ -99,7 +108,7 @@ rules:
 - apiGroups: [ "" ]
   resources: ["pods"]
   verbs: [ "get","list","watch"]
-- apiGroups: [ "extensions" ]
+- apiGroups: [ "apps" ]
   resources: ["deployments/scale"]
   verbs: [ "update", "get" ]
 - apiGroups: [ "" ]
