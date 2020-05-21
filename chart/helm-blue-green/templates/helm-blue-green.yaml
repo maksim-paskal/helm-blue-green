@@ -42,6 +42,9 @@ spec:
             exit 0
           fi
 
+          # delete deployments if exists
+          kubectl -n $namespace delete deploy -lversion=$version
+
           # switch deployments
           {{ range .Values.blueGreen.services }}
           # Deployment {{ .deploymentName }}
@@ -49,9 +52,6 @@ spec:
           {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas={{ $.Values.blueGreen.minReplicas }}{{end}}
           {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
           deploymentVersion=$deploymentName-$version
-
-          # delete deployments if exists
-          kubectl -n $namespace delete deploy -lversion=$version
 
           kubectl -n $namespace get deploy $deploymentName -o json | jq "\
           .metadata.name=\"$deploymentVersion\"|\
