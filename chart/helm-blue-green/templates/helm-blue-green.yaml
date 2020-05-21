@@ -50,6 +50,9 @@ spec:
           {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
           deploymentVersion=$deploymentName-$version
 
+          # delete deployments if exists
+          kubectl -n $namespace delete deploy -lversion=$version
+
           kubectl -n $namespace get deploy $deploymentName -o json | jq "\
           .metadata.name=\"$deploymentVersion\"|\
           .spec.template.metadata.labels.version=\"$version\"|\
