@@ -4,8 +4,12 @@ host: http-echo.cluster-test.com
 blueGreen:
   enabled: true
   version: "{{ .Values.version }}"
+  deleteOldVersion: true
+  deleteOriginal: true
   minReplicas: 2
   extraCommand: []
+  service:
+    clusterIP: ""
   hpa:
     enabled: true
     minReplicas: 2

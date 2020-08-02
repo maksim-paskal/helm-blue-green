@@ -3,6 +3,9 @@ test:
 	helm template chart/helm-blue-green | kubectl apply --dry-run -f -
 build:
 	docker build . -t paskalmaksim/helm-blue-green:v1.0.3
+clean:
+	helm delete --purge helm-blue-green || true
+	kubectl delete ns helm-blue-green || true
 install:
 	helm delete --purge helm-blue-green || true
 	kubectl delete ns helm-blue-green || true

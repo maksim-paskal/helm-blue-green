@@ -59,6 +59,15 @@ spec:
           .spec.selector.matchLabels.version=\"$version\"\
           " | kubectl apply -f -
 
+          serviceVersion=$serviceName-$version
+          kubectl -n $namespace get service $serviceName -o json | jq "\
+          .metadata.name=\"$serviceVersion\"|\
+          .metadata.labels.version=\"$version\"|\
+          .spec.clusterIP=\"{{ $.Values.blueGreen.service.clusterIP }}\"|\
+          .spec.selector.version=\"$version\"\
+          " | kubectl apply -f -
+
+          kubectl -n $namespace set env deploy $deploymentVersion DEPLOYMENT_VERSION=$version
           kubectl -n $namespace label deploy $deploymentVersion version=$version
           kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"version\": \"$version\"}}}}}"
           kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"selector\":{\"matchLabels\":{\"version\": \"$version\"}}}}"
@@ -74,16 +83,22 @@ spec:
           kubectl -n $namespace patch service $serviceName -p "{\"spec\":{\"selector\":{\"version\": \"$version\"}}}"
           {{ end }}
 
-          # delete old deployment
+          {{ if .Values.blueGreen.deleteOldVersion }}
+          # delete old version
           if [ ! -z "$version_current" ] && [ ! "$version_current" = "$version" ]; then
             {{ range .Values.blueGreen.services }}
+            {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
             kubectl -n $namespace delete deployment {{ .deploymentName }}-$version_current || true
+            kubectl -n $namespace delete service $serviceName-$version_current || true
             {{ end }}
           fi
+          {{ end }}
           
+          {{ if .Values.blueGreen.deleteOriginal }}
           # delete original deployment
           {{ range .Values.blueGreen.services }}
           kubectl -n $namespace delete deployment {{ .deploymentName }} || true
+          {{ end }}
           {{ end }}
 
           #extraCommand
@@ -116,7 +131,7 @@ rules:
   verbs: [ "update", "get" ]
 - apiGroups: [ "" ]
   resources: ["services"]
-  verbs: [ "get","patch" ]
+  verbs: [ "get","patch","create","delete" ]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
