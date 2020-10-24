@@ -20,3 +20,5 @@ blueGreen:
   #   minReplicas: 1 # defaults blueGreen.minReplicas
   #   serviceName: paket # defaults deploymentName
   - deploymentName: http-echo
+  configmaps:
+  - configmapName: test-config

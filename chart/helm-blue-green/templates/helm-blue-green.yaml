@@ -6,6 +6,7 @@ metadata:
   name: helm-blue-green
   annotations:
     "helm.sh/hook": post-upgrade,post-install
+    "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 0
@@ -74,6 +75,18 @@ spec:
           kubectl -n $namespace scale --current-replicas=0 --replicas=$minReplicas deployment $deploymentVersion || true
           {{ end }}
 
+          # switch configmaps
+          {{ range .Values.blueGreen.configmaps }}
+          configmapName={{ .configmapName }}
+          configmapVersion=$configmapName-$version
+
+          kubectl -n $namespace get configmap $configmapName -o json | jq "\
+          .metadata.name=\"$configmapVersion\"|\
+          .metadata.labels.version=\"$version\"\
+          " | kubectl apply -f -
+
+          {{ end }}
+
           # wait while deployments will be available
           kubectl -n $namespace wait --for=condition=available deployment -lversion=$version --timeout=600s
 
@@ -91,6 +104,9 @@ spec:
             kubectl -n $namespace delete deployment {{ .deploymentName }}-$version_current || true
             kubectl -n $namespace delete service $serviceName-$version_current || true
             {{ end }}
+            {{ range .Values.blueGreen.configmaps }}
+            kubectl -n $namespace delete configmap {{ .configmapName }}-$version_current || true
+            {{ end }}
           fi
           {{ end }}
           
@@ -98,6 +114,9 @@ spec:
           # delete original deployment
           {{ range .Values.blueGreen.services }}
           kubectl -n $namespace delete deployment {{ .deploymentName }} || true
+          {{ end }}
+          {{ range .Values.blueGreen.configmaps }}
+          kubectl -n $namespace delete configmap {{ .configmapName }} || true
           {{ end }}
           {{ end }}
 
@@ -126,6 +145,9 @@ rules:
 - apiGroups: [ "" ]
   resources: ["pods"]
   verbs: [ "get","list","watch"]
+- apiGroups: [ "" ]
+  resources: ["configmaps"]
+  verbs: [ "get","list","create","delete","watch"]
 - apiGroups: [ "apps" ]
   resources: ["deployments/scale"]
   verbs: [ "update", "get" ]
