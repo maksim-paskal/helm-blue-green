@@ -19,7 +19,7 @@ spec:
       serviceAccountName: helm-blue-green
       containers:
       - name: helm-blue-green
-        image: paskalmaksim/helm-blue-green:v1.0.4
+        image: paskalmaksim/helm-blue-green:v1.0.5
         imagePullPolicy: IfNotPresent
         command:
         - sh
