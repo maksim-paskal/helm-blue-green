@@ -39,7 +39,7 @@ spec:
   selector:
     app: http-echo
 ---
-apiVersion: networking.k8s.io/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: http-echo
@@ -52,5 +52,7 @@ spec:
       paths:
       - path: /
         backend:
-          serviceName: http-echo
-          servicePort: 5678
+          service:
+            name: http-echo
+            port:
+              number: 5678
