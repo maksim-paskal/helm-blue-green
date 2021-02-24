@@ -1,6 +1,6 @@
 test:
 	helm lint --strict chart/helm-blue-green
-	helm template chart/helm-blue-green | kubectl apply --dry-run -f -
+	helm template chart/helm-blue-green | kubectl apply --dry-run=client -f -
 build:
 	docker build . -t paskalmaksim/helm-blue-green:dev
 	docker push paskalmaksim/helm-blue-green:dev
