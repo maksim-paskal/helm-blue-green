@@ -2,7 +2,7 @@
 This type of installation is used for switch users to new version in one moment (kubernetes RollingUpdate strategy can simultaneously routing requests to new and to old version)
 
 ## Test Blue/Green
-You need kubernetes cluster v1.15+ with helm v2.16+ and Ingress
+You need kubernetes cluster v1.19+ with helm v3.4.2+ and Ingress
 
 For example use host name `http-echo.cluster-test.com`
 
