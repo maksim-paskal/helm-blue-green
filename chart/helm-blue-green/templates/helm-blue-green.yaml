@@ -19,7 +19,7 @@ spec:
       serviceAccountName: helm-blue-green
       containers:
       - name: helm-blue-green
-        image: paskalmaksim/helm-blue-green:v1.0.5
+        image: paskalmaksim/helm-blue-green:v1.0.7
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -65,6 +65,7 @@ spec:
           .metadata.name=\"$serviceVersion\"|\
           .metadata.labels.version=\"$version\"|\
           .spec.clusterIP=\"{{ $.Values.blueGreen.service.clusterIP }}\"|\
+          del(.spec.clusterIPs)|\
           .spec.selector.version=\"$version\"\
           " | kubectl apply -f -
 
