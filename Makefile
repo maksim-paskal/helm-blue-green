@@ -12,6 +12,7 @@ install:
 	kubectl delete ns helm-blue-green || true
 	helm upgrade --install helm-blue-green \
 	--namespace helm-blue-green \
+	--create-namespace \
 	--set host=http-echo.cluster-test.com \
 	--set version=v1 \
 	chart/helm-blue-green || true
