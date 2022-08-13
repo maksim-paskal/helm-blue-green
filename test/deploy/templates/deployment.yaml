@@ -1,4 +1,3 @@
-{{ $versionSuffix := include "helm-blue-green.versionSuffix" (index .Values "helm-blue-green") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
