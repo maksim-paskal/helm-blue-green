@@ -1,0 +1,8 @@
+apiVersion: v2
+name: helm-blue-green
+version: 0.0.1
+icon: https://helm.sh/img/helm.svg
+description: Helm Blue Green
+maintainers:
+- name: maksim-paskal  # Maksim Paskal
+  email: paskal.maksim@gmail.com

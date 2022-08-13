@@ -1,0 +1,1 @@
+# {{ include "helm-blue-green.versionSuffix" (index .Values "helm-blue-green") }}
