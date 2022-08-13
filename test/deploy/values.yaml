@@ -1,9 +1,8 @@
-version: v1
 host: http-echo.cluster-test.com
 
-blueGreen:
+helm-blue-green:
   enabled: true
-  version: "{{ .Values.version }}"
+  version: "v1"
   deleteOldVersion: true
   deleteOriginal: true
   minReplicas: 2

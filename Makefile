@@ -1,22 +1,23 @@
+KUBECONFIG=$(HOME)/.kube/dev
 tag=dev
+version=v1
 
-test:
-	helm lint --strict chart/helm-blue-green
-	helm template chart/helm-blue-green | kubectl apply --dry-run=client -f -
+lint:
+	ct lint --all
+	ct lint --charts test/deploy
 build:
-	docker build . -t paskalmaksim/helm-blue-green:$(tag)
-push:
-	docker push paskalmaksim/helm-blue-green:$(tag)
+	docker build --pull --push . -t paskalmaksim/helm-blue-green:$(tag)
 clean:
-	helm delete --purge helm-blue-green || true
+	helm --namespace helm-blue-green delete helm-blue-green || true
 	kubectl delete ns helm-blue-green || true
 install:
-	helm delete --purge helm-blue-green || true
-	kubectl delete ns helm-blue-green || true
+	rm -rf test/deploy/charts
+	helm dep up test/deploy --skip-refresh
+
 	helm upgrade --install helm-blue-green \
 	--namespace helm-blue-green \
 	--create-namespace \
-	--set host=http-echo.cluster-test.com \
-	--set version=v1 \
-	chart/helm-blue-green || true
-	kubectl -n helm-blue-green logs -lapp=helm-blue-green
+	--set helm-blue-green.image.tag=$(tag) \
+	--set helm-blue-green.image.pullPolicy=Always \
+	--set helm-blue-green.version=$(version) \
+	test/deploy

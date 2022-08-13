@@ -1,0 +1,13 @@
+apiVersion: v2
+name: helm-blue-green-test
+version: 0.0.1
+icon: https://helm.sh/img/helm.svg
+description: Helm Blue Green test
+maintainers:
+- name: maksim-paskal  # Maksim Paskal
+  email: paskal.maksim@gmail.com
+dependencies:
+- name: helm-blue-green
+  version: "*"
+  repository: "file://../../charts/helm-blue-green"
+  condition: "helm-blue-green.enabled"

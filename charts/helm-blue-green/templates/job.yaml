@@ -1,5 +1,3 @@
-{{- if .Values.blueGreen.enabled -}}
-# https://github.com/maksim-paskal/helm-blue-green
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -19,20 +17,30 @@ spec:
       serviceAccountName: helm-blue-green
       containers:
       - name: helm-blue-green
-        image: paskalmaksim/helm-blue-green:v1.0.7
-        imagePullPolicy: IfNotPresent
+        image: {{ printf "%s/%s:%s" (default .Values.image.registry .Values.global.imageRegistry) .Values.image.repository .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 30001
+          runAsGroup: 30001
+          privileged: false
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
         command:
         - sh
         - -c
         - |
           set -ex
           namespace={{ .Release.Namespace }}
-          version={{ tpl .Values.blueGreen.version . }}
+          version={{ tpl .Values.version . }}
 
-          {{ if hasKey (index .Values.blueGreen.services 0) "serviceName" }}
-          leader={{ (index .Values.blueGreen.services 0).serviceName }}
+          {{ if hasKey (index .Values.services 0) "serviceName" }}
+          leader={{ (index .Values.services 0).serviceName }}
           {{ else }}
-          leader={{ (index .Values.blueGreen.services 0).deploymentName }}
+          leader={{ (index .Values.services 0).deploymentName }}
           {{ end }}
 
           version_current=`kubectl -n $namespace get svc $leader --output=jsonpath={.spec.selector.version}`
@@ -47,10 +55,10 @@ spec:
           kubectl -n $namespace delete deploy -lversion=$version
 
           # switch deployments
-          {{ range .Values.blueGreen.services }}
+          {{ range .Values.services }}
           # Deployment {{ .deploymentName }}
           deploymentName={{ .deploymentName }}
-          {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas={{ $.Values.blueGreen.minReplicas }}{{end}}
+          {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas={{ $.Values.minReplicas }}{{end}}
           {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
           deploymentVersion=$deploymentName-$version
 
@@ -64,7 +72,7 @@ spec:
           kubectl -n $namespace get service $serviceName -o json | jq "\
           .metadata.name=\"$serviceVersion\"|\
           .metadata.labels.version=\"$version\"|\
-          .spec.clusterIP=\"{{ $.Values.blueGreen.service.clusterIP }}\"|\
+          .spec.clusterIP=\"{{ $.Values.service.clusterIP }}\"|\
           del(.spec.clusterIPs)|\
           .spec.selector.version=\"$version\"\
           " | kubectl apply -f -
@@ -77,7 +85,7 @@ spec:
           {{ end }}
 
           # switch configmaps
-          {{ range .Values.blueGreen.configmaps }}
+          {{ range .Values.configmaps }}
           configmapName={{ .configmapName }}
           configmapVersion=$configmapName-$version
 
@@ -91,105 +99,37 @@ spec:
           # wait while deployments will be available
           kubectl -n $namespace wait --for=condition=available deployment -lversion=$version --timeout=600s
 
-          {{ range .Values.blueGreen.services }}
+          {{ range .Values.services }}
           # switch to version
           {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
           kubectl -n $namespace patch service $serviceName -p "{\"spec\":{\"selector\":{\"version\": \"$version\"}}}"
           {{ end }}
 
-          {{ if .Values.blueGreen.deleteOldVersion }}
+          {{ if .Values.deleteOldVersion }}
           # delete old version
           if [ ! -z "$version_current" ] && [ ! "$version_current" = "$version" ]; then
-            {{ range .Values.blueGreen.services }}
+            {{ range .Values.services }}
             {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
             kubectl -n $namespace delete deployment {{ .deploymentName }}-$version_current || true
             kubectl -n $namespace delete service $serviceName-$version_current || true
             {{ end }}
-            {{ range .Values.blueGreen.configmaps }}
+            {{ range .Values.configmaps }}
             kubectl -n $namespace delete configmap {{ .configmapName }}-$version_current || true
             {{ end }}
           fi
           {{ end }}
           
-          {{ if .Values.blueGreen.deleteOriginal }}
+          {{ if .Values.deleteOriginal }}
           # delete original deployment
-          {{ range .Values.blueGreen.services }}
+          {{ range .Values.services }}
           kubectl -n $namespace delete deployment {{ .deploymentName }} || true
           {{ end }}
-          {{ range .Values.blueGreen.configmaps }}
+          {{ range .Values.configmaps }}
           kubectl -n $namespace delete configmap {{ .configmapName }} || true
           {{ end }}
           {{ end }}
 
           #extraCommand
-{{- range .Values.blueGreen.extraCommand }}
+{{- range .Values.extraCommand }}
           {{ tpl . $ }}
 {{- end }}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name:  helm-blue-green
-automountServiceAccountToken: true
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: helm-blue-green
-rules:
-- apiGroups: [ "apps" ]
-  resources: ["deployments"]
-  verbs: [ "get","list","create","delete","patch","watch"]
-- apiGroups: [ "autoscaling" ]
-  resources: ["horizontalpodautoscalers"]
-  verbs: [ "delete","get","create","delete","patch" ]
-- apiGroups: [ "" ]
-  resources: ["pods"]
-  verbs: [ "get","list","watch"]
-- apiGroups: [ "" ]
-  resources: ["configmaps"]
-  verbs: [ "get","list","create","delete","watch"]
-- apiGroups: [ "apps" ]
-  resources: ["deployments/scale"]
-  verbs: [ "update", "get" ]
-- apiGroups: [ "" ]
-  resources: ["services"]
-  verbs: [ "get","patch","create","delete" ]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: helm-post-job
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: helm-blue-green
-subjects:
-- kind: ServiceAccount
-  name: helm-blue-green
-  namespace: {{ .Release.Namespace }}
-
-{{- if .Values.blueGreen.hpa.enabled }}
-{{ range .Values.blueGreen.services }}
----
-apiVersion: autoscaling/v2beta2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: {{ .deploymentName }}
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: {{ .deploymentName }}-{{ tpl $.Values.blueGreen.version $ }}
-  minReplicas: {{ $.Values.blueGreen.hpa.minReplicas }}
-  maxReplicas: {{ $.Values.blueGreen.hpa.maxReplicas }}
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: {{ $.Values.blueGreen.hpa.targetCPUUtilizationPercentage }}
-{{ end }}
-{{- end }}
-{{- end -}}

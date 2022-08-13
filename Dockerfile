@@ -1,6 +1,6 @@
-FROM alpine:3.15
+FROM alpine:latest
 
-ENV VERSION_KUBERNETES=v1.21.5
+ENV VERSION_KUBERNETES=v1.23.9
 
 RUN apk add --no-cache curl jq \
 && curl -LO https://storage.googleapis.com/kubernetes-release/release/$VERSION_KUBERNETES/bin/linux/amd64/kubectl \

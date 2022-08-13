@@ -1,3 +1,4 @@
+{{ $versionSuffix := include "helm-blue-green.versionSuffix" (index .Values "helm-blue-green") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,9 +10,12 @@ spec:
   replicas: 0
   template:
     metadata:
+      annotations:
+        test: {{ $versionSuffix | quote }}
       labels:
         app: http-echo
     spec:
+      terminationGracePeriodSeconds: 0
       containers:
       - name: http
         image: hashicorp/http-echo
