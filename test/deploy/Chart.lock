@@ -1,6 +1,6 @@
 dependencies:
 - name: helm-blue-green
   repository: file://../../charts/helm-blue-green
-  version: 0.0.1
-digest: sha256:b98d980a993a70ff5cdfa81d00a81724fbc2929bdc58fd4a2b6872dafbda1788
-generated: "2022-08-13T19:25:31.278121+03:00"
+  version: 0.0.4
+digest: sha256:545e77e448c96e760a1edd0180b8cf3e56c384a457cb920df48bc7fab295bbe6
+generated: "2022-10-24T16:45:16.855024+03:00"

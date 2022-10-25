@@ -3,21 +3,12 @@ host: http-echo.cluster-test.com
 helm-blue-green:
   enabled: true
   version: "v1"
-  deleteOldVersion: true
-  deleteOriginal: true
-  minReplicas: 2
-  extraCommand: []
-  service:
-    clusterIP: ""
-  hpa:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 80
-  services:
-  # - deploymentName: test # required
-  #   minReplicas: 1 # defaults blueGreen.minReplicas
-  #   serviceName: paket # defaults deploymentName
-  - deploymentName: http-echo
-  configmaps:
-  - configmapName: test-config
+  config: |
+    deployments:
+    - name: http-echo
+
+    services:
+    - name: http-echo
+
+    configMaps:
+    - name: test-config

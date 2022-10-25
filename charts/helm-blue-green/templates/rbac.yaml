@@ -1,41 +1,42 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: helm-blue-green
+  name: {{ include "common.names.fullname" . }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: helm-blue-green-role
+  name: {{ include "common.names.fullname" . }}-role
 rules:
-- apiGroups: [ "apps" ]
-  resources: ["deployments"]
-  verbs: [ "get","list","create","delete","patch","watch"]
 - apiGroups: [ "autoscaling" ]
   resources: ["horizontalpodautoscalers"]
-  verbs: [ "delete","get","create","delete","patch" ]
+  verbs: [ "get","list","create","delete" ]
+- apiGroups: [ "policy" ]
+  resources: ["poddisruptionbudgets"]
+  verbs: [ "get","list","create","delete" ]
+- apiGroups: [ "apps" ]
+  resources: ["deployments"]
+  verbs: [ "get","list","create","delete","patch","watch","update"]
+- apiGroups: [ "" ]
+  resources: ["services","configmaps"]
+  verbs: [ "get","list","update","create","delete" ]
+
 - apiGroups: [ "" ]
   resources: ["pods"]
   verbs: [ "get","list","watch"]
-- apiGroups: [ "" ]
-  resources: ["configmaps"]
-  verbs: [ "get","list","create","delete","watch"]
 - apiGroups: [ "apps" ]
   resources: ["deployments/scale"]
   verbs: [ "update", "get" ]
-- apiGroups: [ "" ]
-  resources: ["services"]
-  verbs: [ "get","patch","create","delete" ]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: helm-blue-green-binding
+  name: {{ include "common.names.fullname" . }}-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: helm-blue-green-role
+  name: {{ include "common.names.fullname" . }}-role
 subjects:
 - kind: ServiceAccount
-  name: helm-blue-green
+  name: {{ include "common.names.fullname" . }}
   namespace: {{ .Release.Namespace }}

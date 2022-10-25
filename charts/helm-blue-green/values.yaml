@@ -4,25 +4,22 @@ global:
 image:
   registry: docker.io
   repository: paskalmaksim/helm-blue-green
-  tag: v1.0.8
+  tag: v1.1.0
   pullPolicy: IfNotPresent
 
+nodeSelector: {}
+affinity: []
+tolerations: []
+
 version: ""
-deleteOldVersion: true
-deleteOriginal: true
+
+useDefaultsEnv: true
 minReplicas: 2
-extraCommand: []
-service:
-  clusterIP: ""
-hpa:
-  enabled: false
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
-services:
-# - deploymentName: test # required
-#   minReplicas: 1 # defaults blueGreen.minReplicas
-#   serviceName: paket # defaults deploymentName
-- serviceName: ""
-configmaps: []
-# - configmapName: test-config
+maxReplicas: 10
+minAvailable: 1
+averageUtilization: 60
+
+config: ""
+
+configPath: "/config/config.yaml"
+extraEnv: []

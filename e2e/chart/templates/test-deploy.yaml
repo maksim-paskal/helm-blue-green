@@ -1,23 +1,25 @@
+{{ range .Values.names }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: http-echo
+  name: {{ . }}
 spec:
   selector:
     matchLabels:
-      app: http-echo
-  replicas: 0
+      app: {{ . }}
+  replicas: 1
   template:
     metadata:
       labels:
-        app: http-echo
+        app: {{ . }}
     spec:
       terminationGracePeriodSeconds: 0
       containers:
       - name: http
         image: hashicorp/http-echo
         args:
-        - --text=version={{ .Values.version }}
+        - --text=version=$DEPLOYMENT_VERSION
         ports:
         - containerPort: 5678
         resources:
@@ -33,32 +35,21 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: http-echo
+  name: {{ . }}
   labels:
-    app: http-echo
+    app: {{ . }}
 spec:
   type: ClusterIP
   ports:
   - port: 5678
     protocol: TCP
   selector:
-    app: http-echo
+    app: {{ . }}
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: http-echo
-  labels:
-    app: http-echo
-spec:
-  rules:
-  - host: {{ .Values.host }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: http-echo
-            port:
-              number: 5678
+  name: {{ . }}
+data:
+  test: "value"
+{{ end }}
