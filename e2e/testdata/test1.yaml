@@ -1,0 +1,34 @@
+# test first release
+version:
+  value: v1
+
+minReplicas: 1
+
+# need for test2.yaml
+deleteOrigins: false
+
+podCheckIntervalSeconds: 3
+podCheckMaxSeconds: 600
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 10
+  averageUtilization: 50
+
+pdb:
+  minAvailable: 1
+
+deployments:
+- name: http-echo1
+- name: http-echo2
+- name: http-echo3
+
+services:
+- name: http-echo1
+- name: http-echo2
+- name: http-echo3
+
+configMaps:
+- name: http-echo1
+- name: http-echo2
+- name: http-echo3

@@ -1,20 +1,33 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: helm-blue-green
-  annotations:
-    "helm.sh/hook": post-upgrade,post-install
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+  name: {{ printf "%s-%d" (include "common.names.fullname" .) .Release.Revision }}
 spec:
   backoffLimit: 0
+  activeDeadlineSeconds: 6000
   template:
     metadata:
       labels:
-        app: helm-blue-green
+        app: {{ include "common.names.fullname" . }}
     spec:
       restartPolicy: Never
-      serviceAccountName: helm-blue-green
+      serviceAccountName: {{ include "common.names.fullname" . }}
+{{ if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | nindent 8 }}
+{{ end }}
+{{ if .Values.affinity }}
+      tolerations:
+{{ toYaml .Values.affinity | nindent 6 }}
+{{ end }}
+{{ if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | nindent 6 }}
+{{ end }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "common.names.fullname" . }}
       containers:
       - name: helm-blue-green
         image: {{ printf "%s/%s:%s" (default .Values.image.registry .Values.global.imageRegistry) .Values.image.repository .Values.image.tag }}
@@ -29,107 +42,32 @@ spec:
           capabilities:
             drop:
             - ALL
-        command:
-        - sh
-        - -c
-        - |
-          set -ex
-          namespace={{ .Release.Namespace }}
-          version={{ tpl .Values.version . }}
-
-          {{ if hasKey (index .Values.services 0) "serviceName" }}
-          leader={{ (index .Values.services 0).serviceName }}
-          {{ else }}
-          leader={{ (index .Values.services 0).deploymentName }}
-          {{ end }}
-
-          version_current=`kubectl -n $namespace get svc $leader --output=jsonpath={.spec.selector.version}`
-
-          # if current release - changes already appled
-          if [ ! -z "$version_current" ] && [ "$version_current" = "$version" ]; then
-            echo changes already appled
-            exit 0
-          fi
-
-          # delete deployments if exists
-          kubectl -n $namespace delete deploy -lversion=$version
-
-          # switch deployments
-          {{ range .Values.services }}
-          # Deployment {{ .deploymentName }}
-          deploymentName={{ .deploymentName }}
-          {{ if hasKey . "minReplicas" }}minReplicas={{.minReplicas}}{{else}}minReplicas={{ $.Values.minReplicas }}{{end}}
-          {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
-          deploymentVersion=$deploymentName-$version
-
-          kubectl -n $namespace get deploy $deploymentName -o json | jq "\
-          .metadata.name=\"$deploymentVersion\"|\
-          .spec.template.metadata.labels.version=\"$version\"|\
-          .spec.selector.matchLabels.version=\"$version\"\
-          " | kubectl apply -f -
-
-          serviceVersion=$serviceName-$version
-          kubectl -n $namespace get service $serviceName -o json | jq "\
-          .metadata.name=\"$serviceVersion\"|\
-          .metadata.labels.version=\"$version\"|\
-          .spec.clusterIP=\"{{ $.Values.service.clusterIP }}\"|\
-          del(.spec.clusterIPs)|\
-          .spec.selector.version=\"$version\"\
-          " | kubectl apply -f -
-
-          kubectl -n $namespace set env deploy $deploymentVersion DEPLOYMENT_VERSION=$version
-          kubectl -n $namespace label deploy $deploymentVersion version=$version
-          kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"version\": \"$version\"}}}}}"
-          kubectl -n $namespace patch deploy $deploymentVersion -p "{\"spec\":{\"selector\":{\"matchLabels\":{\"version\": \"$version\"}}}}"
-          kubectl -n $namespace scale --current-replicas=0 --replicas=$minReplicas deployment $deploymentVersion || true
-          {{ end }}
-
-          # switch configmaps
-          {{ range .Values.configmaps }}
-          configmapName={{ .configmapName }}
-          configmapVersion=$configmapName-$version
-
-          kubectl -n $namespace get configmap $configmapName -o json | jq "\
-          .metadata.name=\"$configmapVersion\"|\
-          .metadata.labels.version=\"$version\"\
-          " | kubectl apply -f -
-
-          {{ end }}
-
-          # wait while deployments will be available
-          kubectl -n $namespace wait --for=condition=available deployment -lversion=$version --timeout=600s
-
-          {{ range .Values.services }}
-          # switch to version
-          {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
-          kubectl -n $namespace patch service $serviceName -p "{\"spec\":{\"selector\":{\"version\": \"$version\"}}}"
-          {{ end }}
-
-          {{ if .Values.deleteOldVersion }}
-          # delete old version
-          if [ ! -z "$version_current" ] && [ ! "$version_current" = "$version" ]; then
-            {{ range .Values.services }}
-            {{ if hasKey . "serviceName" }}serviceName={{.serviceName}}{{else}}serviceName={{ .deploymentName }}{{end}}
-            kubectl -n $namespace delete deployment {{ .deploymentName }}-$version_current || true
-            kubectl -n $namespace delete service $serviceName-$version_current || true
-            {{ end }}
-            {{ range .Values.configmaps }}
-            kubectl -n $namespace delete configmap {{ .configmapName }}-$version_current || true
-            {{ end }}
-          fi
-          {{ end }}
-          
-          {{ if .Values.deleteOriginal }}
-          # delete original deployment
-          {{ range .Values.services }}
-          kubectl -n $namespace delete deployment {{ .deploymentName }} || true
-          {{ end }}
-          {{ range .Values.configmaps }}
-          kubectl -n $namespace delete configmap {{ .configmapName }} || true
-          {{ end }}
-          {{ end }}
-
-          #extraCommand
-{{- range .Values.extraCommand }}
-          {{ tpl . $ }}
-{{- end }}
+        env:
+        - name: CONFIG_PATH
+          value: {{ .Values.configPath | quote }}
+        - name: VERSION
+          value: {{ .Values.version | quote }}
+{{ if .Values.useDefaultsEnv }}
+        - name: MIN_REPLICAS
+          value: {{ .Values.minReplicas | quote }}
+        - name: MAX_REPLICAS
+          value: {{ .Values.maxReplicas | quote }}
+        - name: MIN_AVAILABLE
+          value: {{ .Values.minAvailable | quote }}
+        - name: AVARAGE_UTILIZATION
+          value: {{ .Values.averageUtilization | quote }}
+{{ end }}
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+{{ if .Values.extraEnv }}
+{{ toYaml .Values.extraEnv | nindent 8 }}
+{{ end }}
+        volumeMounts:
+        - name: config
+          mountPath: /config
+{{ if .Values.args }}
+        args:
+{{ toYaml .Values.args | nindent 8 }}
+{{ end }}

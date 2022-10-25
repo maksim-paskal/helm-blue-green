@@ -1,1 +1,3 @@
 /test/deploy/charts
+/dist
+/helm-blue-green
