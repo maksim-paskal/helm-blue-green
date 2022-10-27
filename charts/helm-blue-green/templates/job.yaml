@@ -1,17 +1,17 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-%d" (include "common.names.fullname" .) .Release.Revision }}
+  name: {{ printf "%s-%d" (include "helm-blue-green.fullname" .) .Release.Revision }}
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 6000
   template:
     metadata:
       labels:
-        app: {{ include "common.names.fullname" . }}
+        app: {{ include "helm-blue-green.fullname" . }}
     spec:
       restartPolicy: Never
-      serviceAccountName: {{ include "common.names.fullname" . }}
+      serviceAccountName: {{ include "helm-blue-green.fullname" . }}
 {{ if .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | nindent 8 }}
@@ -27,7 +27,7 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: {{ include "common.names.fullname" . }}
+          name: {{ include "helm-blue-green.fullname" . }}
       containers:
       - name: helm-blue-green
         image: {{ printf "%s/%s:%s" (default .Values.image.registry .Values.global.imageRegistry) .Values.image.repository .Values.image.tag }}
