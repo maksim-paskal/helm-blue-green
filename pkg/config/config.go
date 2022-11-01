@@ -1,3 +1,15 @@
+/*
+Copyright paskal.maksim@gmail.com
+Licensed under the Apache License, Version 2.0 (the "License")
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 package config
 
 import (
@@ -86,6 +98,13 @@ type ConfigMap struct { //nolint:golint,revive
 	Name string
 }
 
+type WebHook struct {
+	URL     string
+	Headers map[string]string
+	Body    string
+	Method  string
+}
+
 type Type struct {
 	// version spec
 	Version types.Version
@@ -106,11 +125,13 @@ type Type struct {
 	// max time to wait for pods to be ready
 	PodCheckMaxSeconds int
 	// deployments spec
-	Deployments []Deployment
+	Deployments []*Deployment
 	// services spec
-	Services []Service
+	Services []*Service
 	// configmaps spec
-	ConfigMaps []ConfigMap
+	ConfigMaps []*ConfigMap
+	// WebHook spec
+	WebHooks []*WebHook
 }
 
 func (t *Type) String() string {
@@ -221,7 +242,7 @@ func Load() error {
 		return errors.Wrap(err, "error unmarshaling config file")
 	}
 
-	if len(config.Version.Scope) == 0 {
+	if len(config.Version.Scope) == 0 && len(config.Deployments) > 0 {
 		config.Version.Scope = config.Deployments[0].Name
 	}
 

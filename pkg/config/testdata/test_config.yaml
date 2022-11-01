@@ -1,0 +1,7 @@
+deployments:
+- name: test01
+- name: test02
+
+services:
+- name: test01
+- name: test02

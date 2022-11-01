@@ -12,3 +12,8 @@ helm-blue-green:
 
     configMaps:
     - name: test-config
+
+    webhooks:
+    - url: https://get.paskal-dev.com
+      headers:
+        "test": "value"

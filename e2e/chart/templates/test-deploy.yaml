@@ -14,9 +14,13 @@ spec:
       labels:
         app: {{ . }}
     spec:
-      terminationGracePeriodSeconds: 0
+      terminationGracePeriodSeconds: 10
       containers:
       - name: http
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
         image: hashicorp/http-echo
         args:
         - --text=version=$DEPLOYMENT_VERSION

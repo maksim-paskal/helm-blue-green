@@ -1,3 +1,15 @@
+/*
+Copyright paskal.maksim@gmail.com
+Licensed under the Apache License, Version 2.0 (the "License")
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 package internal
 
 import (
@@ -7,6 +19,7 @@ import (
 	"github.com/maksim-paskal/helm-blue-green/pkg/api"
 	"github.com/maksim-paskal/helm-blue-green/pkg/client"
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
+	"github.com/maksim-paskal/helm-blue-green/pkg/webhook"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -32,10 +45,11 @@ func Start() error {
 	return nil
 }
 
-func process(ctx context.Context) error { //nolint:cyclop
+func process(ctx context.Context) error { //nolint:cyclop,funlen
 	values := config.Get()
 
-	// get current version of service selector
+	log.Info("Getting current version of service selector")
+
 	currentVersion, err := api.GetCurrentVersion(ctx, values)
 	if err != nil {
 		return errors.Wrap(err, "error getting current version")
@@ -48,46 +62,59 @@ func process(ctx context.Context) error { //nolint:cyclop
 		return nil
 	}
 
-	// delete unsuccessful deployment
+	log.Info("Delete unsuccessful deployment")
+
 	if err := api.DeleteVersion(ctx, values, api.DeleteNewVersion); err != nil {
 		return errors.Wrap(err, "error deleting old version")
 	}
 
-	// scale original deployments to 0
+	log.Info("Scale original deployments to 0")
+
 	if err := scaleOriginalDeploymens(ctx, values); err != nil {
-		return errors.Wrap(err, "error updating services")
+		return errors.Wrap(err, "error scaling original deployments")
 	}
 
-	// scale original deployments to 0
-	if err := scaleOriginalDeploymens(ctx, values); err != nil {
-		return errors.Wrap(err, "error updating services")
-	}
+	log.Info("Creating new versions")
 
-	// create new versions of deployments,services,configmaps
 	if err := createNewVersions(ctx, values); err != nil {
 		return errors.Wrap(err, "error creating new versions")
 	}
 
-	// wait for all deployments to be ready
+	log.Info("Waiting for all deployments to be ready")
+
 	if err := api.WaitForPodsToBeReady(ctx, values); err != nil {
 		return errors.Wrap(err, "error waiting for pods to be ready")
 	}
 
-	// update service to new version
+	log.Info("Update service to new version")
+
 	if err := updateServicesSelector(ctx, values); err != nil {
-		return errors.Wrap(err, "error updating services")
+		return errors.Wrap(err, "error updating service selector")
 	}
 
-	// delete old versions
+	log.Info("Delete old versions")
+
 	if err := api.DeleteVersion(ctx, values, api.DeleteOldVersions); err != nil {
 		return errors.Wrap(err, "error deleting old version")
 	}
 
-	// delete originals
 	if values.DeleteOrigins {
+		log.Info("Deleting origin deployments and configmaps")
+
 		if err := api.DeleteOrigins(ctx, values); err != nil {
 			return errors.Wrap(err, "error deleting origin")
 		}
+	}
+
+	log.Info("Executing webhooks")
+
+	event := webhook.Event{
+		Type:    webhook.EventTypeCompeted,
+		Version: values.Version.Value,
+	}
+
+	if err := webhook.Execute(ctx, event, values); err != nil {
+		return errors.Wrap(err, "error executing webhooks")
 	}
 
 	return nil
@@ -101,7 +128,7 @@ func createNewVersions(ctx context.Context, values *config.Type) error {
 	for _, deployment := range values.Deployments {
 		wg.Add(1)
 
-		go func(deployment config.Deployment) {
+		go func(deployment *config.Deployment) {
 			defer wg.Done()
 
 			if err := api.CopyDeployment(ctx, deployment, values); err != nil {
@@ -114,7 +141,7 @@ func createNewVersions(ctx context.Context, values *config.Type) error {
 		for _, service := range values.Services {
 			wg.Add(1)
 
-			go func(service config.Service) {
+			go func(service *config.Service) {
 				defer wg.Done()
 
 				if err := api.CopyService(ctx, service, values); err != nil {
@@ -127,7 +154,7 @@ func createNewVersions(ctx context.Context, values *config.Type) error {
 	for _, configMap := range values.ConfigMaps {
 		wg.Add(1)
 
-		go func(configMap config.ConfigMap) {
+		go func(configMap *config.ConfigMap) {
 			defer wg.Done()
 
 			if err := api.CopyConfigMap(ctx, configMap, values); err != nil {
@@ -149,7 +176,7 @@ func updateServicesSelector(ctx context.Context, values *config.Type) error {
 	for _, service := range values.Services {
 		wg.Add(1)
 
-		go func(service config.Service) {
+		go func(service *config.Service) {
 			defer wg.Done()
 
 			if err := api.UpdateServicesSelector(ctx, service, values); err != nil {
@@ -171,7 +198,7 @@ func scaleOriginalDeploymens(ctx context.Context, values *config.Type) error {
 	for _, deployment := range values.Deployments {
 		wg.Add(1)
 
-		go func(deployment config.Deployment) {
+		go func(deployment *config.Deployment) {
 			defer wg.Done()
 
 			if err := api.ScaleDeployment(ctx, deployment, 0, values); err != nil {

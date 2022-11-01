@@ -10,37 +10,25 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package e2e_test
+package config_test
 
 import (
 	"flag"
 	"testing"
 
-	"github.com/maksim-paskal/helm-blue-green/internal"
-	log "github.com/sirupsen/logrus"
+	"github.com/maksim-paskal/helm-blue-green/pkg/config"
 )
 
-func TestApplication(t *testing.T) {
-	t.Parallel()
+func TestConfig(t *testing.T) { //nolint:paralleltest
+	t.Setenv("NAMESPACE", "default")
+	t.Setenv("VERSION", "test-version-1")
+	t.Setenv("MIN_REPLICAS", "1")
 
-	flag.Parse()
-	log.SetLevel(log.DebugLevel)
-
-	tests := []string{
-		"testdata/test1.yaml",
-		"testdata/test2.yaml",
-		"testdata/test3.yaml",
+	if err := flag.Set("config", "testdata/test_config.yaml"); err != nil {
+		t.Fatal(err)
 	}
 
-	for _, test := range tests {
-		log.Infof("Starting test %s", test)
-
-		if err := flag.Set("config", test); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := internal.Start(); err != nil {
-			t.Fatal(err)
-		}
+	if err := config.Load(); err != nil {
+		t.Fatal(err)
 	}
 }
