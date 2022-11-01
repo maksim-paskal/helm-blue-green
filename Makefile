@@ -4,6 +4,7 @@ version=v1
 image=paskalmaksim/helm-blue-green:$(tag)
 
 lint:
+	helm dep up test/deploy --skip-refresh
 	ct lint --all
 	ct lint --charts test/deploy
 	ct lint --charts e2e/chart
@@ -42,11 +43,14 @@ e2e:
 	make clean
 .PHONY: test
 test:
+	./scripts/validate-license.sh
 	go fmt ./cmd/... ./pkg/... ./internal/...
 	go vet ./cmd/... ./pkg/... ./internal/...
+	go test ./pkg/...
 	go mod tidy
 	go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run -v
 run:
 	go run --race ./cmd \
 	--log.level=debug \
+	--log.json=false \
 	--kubeconfig $(KUBECONFIG)

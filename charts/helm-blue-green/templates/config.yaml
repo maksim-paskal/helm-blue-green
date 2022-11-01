@@ -4,4 +4,4 @@ metadata:
   name: {{ include "helm-blue-green.fullname" . }}
 data:
   config.yaml:
-{{ toYaml .Values.config | indent 4 }}
+{{ toYaml (printf "%s\n%s" .Values.config .Values.extraConfig) | indent 4 }}

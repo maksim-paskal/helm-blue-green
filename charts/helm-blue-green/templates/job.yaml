@@ -3,15 +3,22 @@ kind: Job
 metadata:
   name: {{ printf "%s-%d" (include "helm-blue-green.fullname" .) .Release.Revision }}
 spec:
-  backoffLimit: 0
-  activeDeadlineSeconds: 6000
+  backoffLimit: {{ .Values.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
   template:
     metadata:
       labels:
         app: {{ include "helm-blue-green.fullname" . }}
+{{ if .Values.annotations }}
+      annotations:
+{{ toYaml .Values.annotations | indent 8 }}
+{{ end }}
     spec:
-      restartPolicy: Never
+      restartPolicy: {{ .Values.restartPolicy }}
       serviceAccountName: {{ include "helm-blue-green.fullname" . }}
+{{ if .Values.priorityClassName }}
+      podPriorityClassName: {{ .Values.priorityClassName | quote }}
+{{ end }}
 {{ if .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | nindent 8 }}
@@ -42,6 +49,8 @@ spec:
           capabilities:
             drop:
             - ALL
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
         env:
         - name: CONFIG_PATH
           value: {{ .Values.configPath | quote }}
