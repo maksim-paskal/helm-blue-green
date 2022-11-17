@@ -108,8 +108,12 @@ type WebHook struct {
 type Type struct {
 	// version spec
 	Version types.Version
+	// name blue green deployment, defaults to first deployment
+	Name string
 	// namespace of deployment
 	Namespace string
+	// environment of deployment
+	Environment string
 	// HorizontalPodAutoscaler spec
 	Hpa Hpa
 	// PodDisruptionBudget spec
@@ -182,6 +186,10 @@ func loadFromEnv() error { //nolint:cyclop
 		config.Namespace = namespace
 	}
 
+	if environment := os.Getenv("ENVIRONMENT"); len(environment) > 0 {
+		config.Environment = environment
+	}
+
 	if version := os.Getenv("VERSION"); len(version) > 0 {
 		config.Version.Value = version
 	}
@@ -244,6 +252,10 @@ func Load() error {
 
 	if len(config.Version.Scope) == 0 && len(config.Deployments) > 0 {
 		config.Version.Scope = config.Deployments[0].Name
+	}
+
+	if len(config.Name) == 0 && len(config.Deployments) > 0 {
+		config.Name = config.Deployments[0].Name
 	}
 
 	if err := loadFromEnv(); err != nil {

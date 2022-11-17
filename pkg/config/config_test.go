@@ -23,6 +23,7 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 	t.Setenv("NAMESPACE", "default")
 	t.Setenv("VERSION", "test-version-1")
 	t.Setenv("MIN_REPLICAS", "1")
+	t.Setenv("ENVIRONMENT", "testEnv")
 
 	if err := flag.Set("config", "testdata/test_config.yaml"); err != nil {
 		t.Fatal(err)
@@ -30,5 +31,21 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 
 	if err := config.Load(); err != nil {
 		t.Fatal(err)
+	}
+
+	if want := "default"; want != config.Get().Namespace {
+		t.Fatalf("Namespace is not %s", want)
+	}
+
+	if want := "testName"; want != config.Get().Name {
+		t.Fatalf("Name is not %s", want)
+	}
+
+	if want := "test-version-1"; want != config.Get().Version.Value {
+		t.Fatalf("Version is not %s", want)
+	}
+
+	if want := "testEnv"; want != config.Get().Environment {
+		t.Fatalf("Environment is not %s", want)
 	}
 }
