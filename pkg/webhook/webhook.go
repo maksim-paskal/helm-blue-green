@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"text/template"
 
@@ -29,8 +30,35 @@ type EventType string
 const EventTypeCompeted EventType = "completed"
 
 type Event struct {
-	Type    EventType
-	Version string
+	Type        EventType
+	Name        string
+	Namespace   string
+	Environment string
+	Version     string
+	OldVersion  string
+	Duration    string
+}
+
+// return query string with not empty elements.
+func (e *Event) GetQueryString() string {
+	queryString := url.Values{}
+
+	queryString.Add("event.Type", string(e.Type))
+	queryString.Add("event.Name", e.Name)
+	queryString.Add("event.Namespace", e.Namespace)
+	queryString.Add("event.Environment", e.Environment)
+	queryString.Add("event.Version", e.Version)
+	queryString.Add("event.OldVersion", e.OldVersion)
+	queryString.Add("event.Duration", e.Duration)
+
+	// remove empty values
+	for key, value := range queryString {
+		if len(value[0]) == 0 {
+			queryString.Del(key)
+		}
+	}
+
+	return queryString.Encode()
 }
 
 func (e *Event) FormatValue(value string) (string, error) {

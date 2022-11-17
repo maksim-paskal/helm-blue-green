@@ -15,6 +15,7 @@ package internal
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/api"
 	"github.com/maksim-paskal/helm-blue-green/pkg/client"
@@ -46,6 +47,8 @@ func Start() error {
 }
 
 func process(ctx context.Context) error { //nolint:cyclop,funlen
+	startTime := time.Now()
+
 	values := config.Get()
 
 	log.Info("Getting current version of service selector")
@@ -109,8 +112,13 @@ func process(ctx context.Context) error { //nolint:cyclop,funlen
 	log.Info("Executing webhooks")
 
 	event := webhook.Event{
-		Type:    webhook.EventTypeCompeted,
-		Version: values.Version.Value,
+		Type:        webhook.EventTypeCompeted,
+		Name:        values.Name,
+		Namespace:   values.Namespace,
+		Environment: values.Environment,
+		Version:     values.Version.Value,
+		OldVersion:  currentVersion,
+		Duration:    time.Since(startTime).String(),
 	}
 
 	if err := webhook.Execute(ctx, event, values); err != nil {

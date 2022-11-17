@@ -95,8 +95,10 @@ func TestHooks(t *testing.T) {
 	ctx := context.Background()
 
 	event := webhook.Event{
-		Type:    webhook.EventTypeCompeted,
-		Version: "v1",
+		Type:      webhook.EventTypeCompeted,
+		Name:      "name",
+		Namespace: "namespace",
+		Version:   "v1",
 	}
 
 	for _, test := range tests {
@@ -115,6 +117,7 @@ func TestEventFormat(t *testing.T) {
 	}
 
 	tests := make(map[string]string, 0)
+	tests["{{ .GetQueryString }}"] = "event.Type=completed&event.Version=v1"
 	tests["{{ .Type }}"] = "completed"
 	tests["{{ .Version }}"] = "v1"
 	tests["WW{{ .Version }}WW"] = "WWv1WW"

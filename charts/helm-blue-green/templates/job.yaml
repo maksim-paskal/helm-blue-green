@@ -57,6 +57,8 @@ spec:
         - name: VERSION
           value: {{ .Values.version | quote }}
 {{ if .Values.useDefaultsEnv }}
+        - name: ENVIRONMENT
+          value: {{ .Values.environment | quote }}
         - name: MIN_REPLICAS
           value: {{ .Values.minReplicas | quote }}
         - name: MAX_REPLICAS

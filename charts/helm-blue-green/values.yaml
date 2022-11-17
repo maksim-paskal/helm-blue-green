@@ -23,6 +23,7 @@ activeDeadlineSeconds: 6000
 restartPolicy: OnFailure
 
 useDefaultsEnv: true
+environment: ""
 minReplicas: 2
 maxReplicas: 10
 minAvailable: 1

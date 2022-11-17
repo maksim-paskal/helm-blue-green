@@ -1,3 +1,5 @@
+name: testName
+
 deployments:
 - name: test01
 - name: test02
