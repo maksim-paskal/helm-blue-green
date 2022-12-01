@@ -118,7 +118,7 @@ func process(ctx context.Context) error { //nolint:cyclop,funlen
 		Environment: values.Environment,
 		Version:     values.Version.Value,
 		OldVersion:  currentVersion,
-		Duration:    time.Since(startTime).String(),
+		Duration:    time.Since(startTime).Round(time.Second).String(),
 	}
 
 	if err := webhook.Execute(ctx, event, values); err != nil {
