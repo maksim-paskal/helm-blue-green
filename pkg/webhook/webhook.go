@@ -15,6 +15,7 @@ package webhook
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -41,24 +42,37 @@ type Event struct {
 
 // return query string with not empty elements.
 func (e *Event) GetQueryString() string {
-	queryString := url.Values{}
+	q := make([]string, 0)
 
-	queryString.Add("event.Type", string(e.Type))
-	queryString.Add("event.Name", e.Name)
-	queryString.Add("event.Namespace", e.Namespace)
-	queryString.Add("event.Environment", e.Environment)
-	queryString.Add("event.Version", e.Version)
-	queryString.Add("event.OldVersion", e.OldVersion)
-	queryString.Add("event.Duration", e.Duration)
+	q = append(q, "event.Type="+string(e.Type))
+	q = append(q, "event.Name="+url.QueryEscape(e.Name))
+	q = append(q, "event.Namespace="+url.QueryEscape(e.Namespace))
+	q = append(q, "event.Environment="+url.QueryEscape(e.Environment))
+	q = append(q, "event.Version="+url.QueryEscape(e.Version))
+	q = append(q, "event.OldVersion="+url.QueryEscape(e.OldVersion))
+	q = append(q, "event.Duration="+url.QueryEscape(e.Duration))
 
-	// remove empty values
-	for key, value := range queryString {
-		if len(value[0]) == 0 {
-			queryString.Del(key)
+	queryString := make([]string, 0)
+
+	for _, v := range q {
+		if strings.HasSuffix(v, "=") {
+			continue
 		}
+
+		queryString = append(queryString, v)
 	}
 
-	return queryString.Encode()
+	return strings.Join(queryString, "&")
+}
+
+// return query string with not empty elements.
+func (e *Event) GetJSON() string {
+	b, err := json.Marshal(e)
+	if err != nil {
+		return err.Error()
+	}
+
+	return string(b)
 }
 
 func (e *Event) FormatValue(value string) (string, error) {
