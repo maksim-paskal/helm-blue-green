@@ -28,10 +28,8 @@ func createPdb(ctx context.Context, newDeploy *appsv1.Deployment, pdbConfig conf
 
 	pdb := &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: newDeploy.Name,
-			Labels: map[string]string{
-				values.Version.Key(): values.Version.Value,
-			},
+			Name:   newDeploy.Name,
+			Labels: make(map[string]string),
 		},
 
 		Spec: policyv1.PodDisruptionBudgetSpec{
@@ -41,6 +39,8 @@ func createPdb(ctx context.Context, newDeploy *appsv1.Deployment, pdbConfig conf
 			},
 		},
 	}
+
+	labels(values, pdb.ObjectMeta.Labels)
 
 	_, err := kube().PolicyV1().PodDisruptionBudgets(values.Namespace).Create(ctx, pdb, metav1.CreateOptions{})
 	if err != nil {

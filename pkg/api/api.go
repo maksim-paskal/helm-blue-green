@@ -33,6 +33,18 @@ func kube() *kubernetes.Clientset {
 	return client.Client.KubeClient()
 }
 
+const (
+	labelNamespace = "helm-blue-green"
+	labelScope     = labelNamespace + "/scope"
+	labelVersion   = labelNamespace + "/version"
+)
+
+func labels(values *config.Type, labels map[string]string) {
+	labels[values.Version.Key()] = values.Version.Value
+	labels[labelScope] = values.Version.Scope
+	labels[labelVersion] = values.Version.Value
+}
+
 func CopyDeployment(ctx context.Context, item *config.Deployment, values *config.Type) error {
 	log.Debugf("Copying deployment %s/%s", values.Namespace, item.Name)
 
@@ -45,9 +57,10 @@ func CopyDeployment(ctx context.Context, item *config.Deployment, values *config
 
 	newDeploy := deploy.DeepCopy()
 	newDeploy.ResourceVersion = ""
-	newDeploy.Labels[values.Version.Key()] = values.Version.Value
-	newDeploy.Spec.Template.Labels[values.Version.Key()] = values.Version.Value
-	newDeploy.Spec.Selector.MatchLabels[values.Version.Key()] = values.Version.Value
+
+	labels(values, newDeploy.Labels)
+	labels(values, newDeploy.Spec.Template.Labels)
+	labels(values, newDeploy.Spec.Selector.MatchLabels)
 
 	newDeploy.Name = fmt.Sprintf("%s-%s", item.Name, values.Version.Value)
 
@@ -99,8 +112,10 @@ func CopyService(ctx context.Context, item *config.Service, values *config.Type)
 	newService.ResourceVersion = ""
 	newService.Spec.ClusterIP = ""
 	newService.Spec.ClusterIPs = nil
-	newService.Labels[values.Version.Key()] = values.Version.Value
-	newService.Spec.Selector[values.Version.Key()] = values.Version.Value
+
+	labels(values, newService.Labels)
+	labels(values, newService.Spec.Selector)
+
 	newService.Name = fmt.Sprintf("%s-%s", item.Name, values.Version.Value)
 
 	log.Debugf("New name %s/%s", values.Namespace, newService.Name)
@@ -121,7 +136,9 @@ func CopyConfigMap(ctx context.Context, item *config.ConfigMap, values *config.T
 
 	newConfigMap := configMap.DeepCopy()
 	newConfigMap.ResourceVersion = ""
-	newConfigMap.Labels[values.Version.Key()] = values.Version.Value
+
+	labels(values, newConfigMap.Labels)
+
 	newConfigMap.Name = fmt.Sprintf("%s-%s", item.Name, values.Version.Value)
 
 	log.Debugf("New name %s/%s", values.Namespace, newConfigMap.Name)
@@ -193,7 +210,7 @@ func UpdateServicesSelector(ctx context.Context, item *config.Service, values *c
 			return false, errors.Wrap(err, "error getting service")
 		}
 
-		service.Spec.Selector[values.Version.Key()] = values.Version.Value
+		labels(values, service.Spec.Selector)
 
 		_, err = kube().CoreV1().Services(values.Namespace).Update(ctx, service, metav1.UpdateOptions{})
 		if err != nil {
