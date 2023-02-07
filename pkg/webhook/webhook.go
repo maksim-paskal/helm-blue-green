@@ -28,7 +28,14 @@ import (
 
 type EventType string
 
-const EventTypeCompeted EventType = "completed"
+const (
+	// Processing was successful
+	EventTypeSuccess EventType = "success"
+	// Something went wrong during processing
+	EventTypeFailed EventType = "failed"
+	// Process was successful, but no changes were made
+	EventTypeAlreadyDeployed EventType = "already_deployed"
+)
 
 type Event struct {
 	Type        EventType

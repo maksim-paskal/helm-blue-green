@@ -39,93 +39,119 @@ func Start() error {
 
 	log.Debugf("Using config:\n%s", config.Get().String())
 
-	if err := process(ctx); err != nil {
-		return errors.Wrap(err, "error processing")
+	values := config.Get()
+
+	event := webhook.Event{
+		Name:        values.Name,
+		Namespace:   values.Namespace,
+		Environment: values.Environment,
+		Version:     values.Version.Value,
+	}
+
+	startTime := time.Now()
+
+	var processError error
+
+	if result, err := process(ctx); err != nil {
+		// if error happened during processing, send failed event
+		event.Type = webhook.EventTypeFailed
+		processError = err
+	} else {
+		// if no error happened, send success event
+		event.Type = result.EventType
+		event.OldVersion = result.CurrentVersion
+	}
+
+	event.Duration = time.Since(startTime).Round(time.Second).String()
+
+	log.Info("Executing webhooks")
+
+	if err := webhook.Execute(ctx, event, values); err != nil {
+		return errors.Wrap(err, "error executing webhooks")
+	}
+
+	// send process error after executing webhooks
+	if event.Type == webhook.EventTypeFailed {
+		return processError
 	}
 
 	return nil
 }
 
-func process(ctx context.Context) error { //nolint:cyclop,funlen
-	startTime := time.Now()
+type processResult struct {
+	EventType      webhook.EventType
+	CurrentVersion string
+}
 
+func process(ctx context.Context) (*processResult, error) { //nolint:cyclop,funlen
 	values := config.Get()
+	result := processResult{}
 
 	log.Info("Getting current version of service selector")
 
 	currentVersion, err := api.GetCurrentVersion(ctx, values)
 	if err != nil {
-		return errors.Wrap(err, "error getting current version")
+		return nil, errors.Wrap(err, "error getting current version")
 	}
 
-	// stop processing if traffic was already switched to new version
-	if currentVersion == values.Version.Value {
-		log.Infof("Version %s is already deployed", currentVersion)
+	result.CurrentVersion = currentVersion
 
-		return nil
+	// stop processing if traffic was already switched to new version
+	if result.CurrentVersion == values.Version.Value {
+		log.Infof("Version %s is already deployed", result.CurrentVersion)
+
+		result.EventType = webhook.EventTypeAlreadyDeployed
+
+		return &result, nil
 	}
 
 	log.Info("Delete unsuccessful deployment")
 
 	if err := api.DeleteVersion(ctx, values, api.DeleteNewVersion); err != nil {
-		return errors.Wrap(err, "error deleting old version")
+		return nil, errors.Wrap(err, "error deleting old version")
 	}
 
 	log.Info("Scale original deployments to 0")
 
 	if err := scaleOriginalDeploymens(ctx, values); err != nil {
-		return errors.Wrap(err, "error scaling original deployments")
+		return nil, errors.Wrap(err, "error scaling original deployments")
 	}
 
 	log.Info("Creating new versions")
 
 	if err := createNewVersions(ctx, values); err != nil {
-		return errors.Wrap(err, "error creating new versions")
+		return nil, errors.Wrap(err, "error creating new versions")
 	}
 
 	log.Info("Waiting for all deployments to be ready")
 
 	if err := api.WaitForPodsToBeReady(ctx, values); err != nil {
-		return errors.Wrap(err, "error waiting for pods to be ready")
+		return nil, errors.Wrap(err, "error waiting for pods to be ready")
 	}
 
 	log.Info("Update service to new version")
 
 	if err := updateServicesSelector(ctx, values); err != nil {
-		return errors.Wrap(err, "error updating service selector")
+		return nil, errors.Wrap(err, "error updating service selector")
 	}
 
 	log.Info("Delete old versions")
 
 	if err := api.DeleteVersion(ctx, values, api.DeleteOldVersions); err != nil {
-		return errors.Wrap(err, "error deleting old version")
+		return nil, errors.Wrap(err, "error deleting old version")
 	}
 
 	if values.DeleteOrigins {
 		log.Info("Deleting origin deployments and configmaps")
 
 		if err := api.DeleteOrigins(ctx, values); err != nil {
-			return errors.Wrap(err, "error deleting origin")
+			return nil, errors.Wrap(err, "error deleting origin")
 		}
 	}
 
-	log.Info("Executing webhooks")
+	result.EventType = webhook.EventTypeSuccess
 
-	event := webhook.Event{
-		Type:        webhook.EventTypeCompeted,
-		Name:        values.Name,
-		Namespace:   values.Namespace,
-		Environment: values.Environment,
-		Version:     values.Version.Value,
-		OldVersion:  currentVersion,
-		Duration:    time.Since(startTime).Round(time.Second).String(),
-	}
-
-	if err := webhook.Execute(ctx, event, values); err != nil {
-		return errors.Wrap(err, "error executing webhooks")
-	}
-
-	return nil
+	return &result, nil
 }
 
 func createNewVersions(ctx context.Context, values *config.Type) error {
