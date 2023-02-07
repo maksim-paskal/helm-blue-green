@@ -95,7 +95,7 @@ func TestHooks(t *testing.T) {
 	ctx := context.Background()
 
 	event := webhook.Event{
-		Type:      webhook.EventTypeCompeted,
+		Type:      webhook.EventTypeSuccess,
 		Name:      "name",
 		Namespace: "namespace",
 		Version:   "v1",
@@ -112,7 +112,7 @@ func TestEventFormat(t *testing.T) {
 	t.Parallel()
 
 	event := webhook.Event{
-		Type:        webhook.EventTypeCompeted,
+		Type:        webhook.EventTypeSuccess,
 		Name:        "1",
 		Namespace:   "2",
 		Environment: "3",
@@ -122,10 +122,10 @@ func TestEventFormat(t *testing.T) {
 	}
 
 	tests := make(map[string]string, 0)
-	tests["{{ .GetQueryString }}"] = "event.Type=completed&event.Name=1&event.Namespace=2&event.Environment=3&event.Version=4&event.OldVersion=5&event.Duration=6" //nolint:lll
-	tests["{{ .Type }}"] = "completed"
+	tests["{{ .GetQueryString }}"] = "event.Type=success&event.Name=1&event.Namespace=2&event.Environment=3&event.Version=4&event.OldVersion=5&event.Duration=6" //nolint:lll
+	tests["{{ .Type }}"] = "success"
 	tests["{{ .Version }}"] = "4"
-	tests["{{ .GetJSON }}"] = `{"Type":"completed","Name":"1","Namespace":"2","Environment":"3","Version":"4","OldVersion":"5","Duration":"6"}` //nolint:lll
+	tests["{{ .GetJSON }}"] = `{"Type":"success","Name":"1","Namespace":"2","Environment":"3","Version":"4","OldVersion":"5","Duration":"6"}` //nolint:lll
 	tests["WW{{ .Version }}WW"] = "WW4WW"
 	tests["test"] = "test"
 	tests[""] = ""
