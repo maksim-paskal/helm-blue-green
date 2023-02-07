@@ -24,10 +24,8 @@ import (
 func createHPA(ctx context.Context, deploymentName string, hpaConfig config.Hpa, values *config.Type) error {
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: deploymentName,
-			Labels: map[string]string{
-				values.Version.Key(): values.Version.Value,
-			},
+			Name:   deploymentName,
+			Labels: make(map[string]string),
 		},
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
@@ -51,6 +49,8 @@ func createHPA(ctx context.Context, deploymentName string, hpaConfig config.Hpa,
 			},
 		},
 	}
+
+	labels(values, hpa.ObjectMeta.Labels)
 
 	_, err := kube().AutoscalingV2().HorizontalPodAutoscalers(values.Namespace).Create(ctx, hpa, metav1.CreateOptions{})
 	if err != nil {
