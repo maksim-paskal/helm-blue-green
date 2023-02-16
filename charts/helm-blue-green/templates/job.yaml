@@ -65,6 +65,8 @@ spec:
           value: {{ .Values.maxReplicas | quote }}
         - name: MIN_AVAILABLE
           value: {{ .Values.minAvailable | quote }}
+        - name: MAX_UNAVAILABLE
+          value: {{ .Values.maxUnavailable | quote }}
         - name: AVARAGE_UTILIZATION
           value: {{ .Values.averageUtilization | quote }}
 {{ end }}

@@ -22,6 +22,7 @@ import (
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
@@ -56,8 +57,21 @@ type Hpa struct {
 }
 
 type Pdb struct {
-	Enabled      bool
-	MinAvailable int
+	Enabled        bool
+	MinAvailable   int
+	MaxUnavailable int
+}
+
+func (pdb *Pdb) GetMinAvailable() *intstr.IntOrString {
+	value := intstr.FromInt(pdb.MinAvailable)
+
+	return &value
+}
+
+func (pdb *Pdb) GetMaxUnavailable() *intstr.IntOrString {
+	value := intstr.FromInt(pdb.MaxUnavailable)
+
+	return &value
 }
 
 type Deployment struct {
@@ -229,6 +243,15 @@ func loadFromEnv() error { //nolint:cyclop
 		}
 
 		config.Pdb.MinAvailable = minAvailableInt
+	}
+
+	if maxUnavailable := os.Getenv("MAX_UNAVAILABLE"); len(maxUnavailable) > 0 {
+		maxUnavailableInt, err := strconv.Atoi(maxUnavailable)
+		if err != nil {
+			return errors.Wrapf(err, "error parsing max unavailable %s", maxUnavailable)
+		}
+
+		config.Pdb.MaxUnavailable = maxUnavailableInt
 	}
 
 	if averageUtilization := os.Getenv("AVARAGE_UTILIZATION"); len(averageUtilization) > 0 {

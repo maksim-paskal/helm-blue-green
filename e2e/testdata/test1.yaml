@@ -16,7 +16,8 @@ hpa:
   averageUtilization: 50
 
 pdb:
-  minAvailable: 1
+  minAvailable: 0
+  maxUnavailable: 1
 
 deployments:
 - name: http-echo1
