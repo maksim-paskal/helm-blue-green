@@ -8,7 +8,7 @@ minReplicas: 1
 deleteOrigins: false
 
 podCheckIntervalSeconds: 3
-podCheckMaxSeconds: 600
+maxProcessingTimeSeconds: 600
 
 hpa:
   minReplicas: 1

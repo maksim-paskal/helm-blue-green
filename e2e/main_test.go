@@ -13,12 +13,15 @@ limitations under the License.
 package e2e_test
 
 import (
+	"context"
 	"flag"
 	"testing"
 
 	"github.com/maksim-paskal/helm-blue-green/internal"
 	log "github.com/sirupsen/logrus"
 )
+
+var ctx = context.Background()
 
 func TestApplication(t *testing.T) {
 	t.Parallel()
@@ -39,7 +42,7 @@ func TestApplication(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := internal.Start(); err != nil {
+		if err := internal.Start(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}

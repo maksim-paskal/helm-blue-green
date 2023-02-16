@@ -25,9 +25,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func Start() error {
-	ctx := context.Background()
-
+func Start(ctx context.Context) error {
 	err := client.Init()
 	if err != nil {
 		return errors.Wrap(err, "error initializing client")
@@ -52,7 +50,12 @@ func Start() error {
 
 	var processError error
 
-	if result, err := process(ctx); err != nil {
+	log.Debugf("Creating processing context with timeout %s", config.Get().GetMaxProcessingTimeSeconds())
+
+	processingContext, cancel := context.WithTimeout(ctx, config.Get().GetMaxProcessingTimeSeconds())
+	defer cancel()
+
+	if result, err := process(processingContext); err != nil {
 		// if error happened during processing, send failed event
 		event.Type = webhook.EventTypeFailed
 		processError = err

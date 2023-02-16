@@ -160,15 +160,9 @@ func WaitForPodsToBeReady(ctx context.Context, values *config.Type) error { //no
 		targetMinReplicas += int(item.GetMinReplicas(values))
 	}
 
-	startTime := time.Now()
-
 	for {
 		if ctx.Err() != nil {
 			return errors.Wrap(ctx.Err(), "context error")
-		}
-
-		if time.Since(startTime) > time.Duration(values.PodCheckMaxSeconds)*time.Second {
-			return errors.New("timeout waiting for pods to be ready")
 		}
 
 		pods, err := kube().CoreV1().Pods(values.Namespace).List(ctx, metav1.ListOptions{
@@ -197,7 +191,7 @@ func WaitForPodsToBeReady(ctx context.Context, values *config.Type) error { //no
 			break
 		}
 
-		time.Sleep(time.Duration(values.PodCheckIntervalSeconds) * time.Second)
+		time.Sleep(values.GetPodCheckIntervalSeconds())
 	}
 
 	return nil

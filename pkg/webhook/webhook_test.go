@@ -23,7 +23,10 @@ import (
 	"github.com/maksim-paskal/helm-blue-green/pkg/webhook"
 )
 
-var ts = httptest.NewServer(getHandler())
+var (
+	ctx = context.Background()
+	ts  = httptest.NewServer(getHandler())
+)
 
 func getHandler() http.Handler {
 	mux := http.NewServeMux()
@@ -91,8 +94,6 @@ func TestHooks(t *testing.T) {
 		Headers: map[string]string{"test2": "value2"},
 		Method:  "POST",
 	})
-
-	ctx := context.Background()
 
 	event := webhook.Event{
 		Type:      webhook.EventTypeSuccess,
