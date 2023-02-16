@@ -17,6 +17,7 @@ import (
 	"flag"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 	"github.com/pkg/errors"
@@ -27,17 +28,17 @@ import (
 var configFile = flag.String("config", os.Getenv("CONFIG_PATH"), "Path to config file")
 
 const (
-	defaultPodCheckIntervalSeconds = 3
-	defaultPodCheckMaxSeconds      = 600
+	defaultPodCheckIntervalSeconds  = 3
+	defaultMaxProcessingTimeSeconds = 600
 )
 
 var config = newConfig()
 
 func newConfig() Type {
 	return Type{
-		PodCheckIntervalSeconds: defaultPodCheckIntervalSeconds,
-		PodCheckMaxSeconds:      defaultPodCheckMaxSeconds,
-		DeleteOrigins:           true,
+		PodCheckIntervalSeconds:  defaultPodCheckIntervalSeconds,
+		MaxProcessingTimeSeconds: defaultMaxProcessingTimeSeconds,
+		DeleteOrigins:            true,
 		Hpa: Hpa{
 			Enabled: true,
 		},
@@ -108,6 +109,8 @@ type WebHook struct {
 type Type struct {
 	// version spec
 	Version types.Version
+	// max time to all operations
+	MaxProcessingTimeSeconds int
 	// name blue green deployment, defaults to first deployment
 	Name string
 	// namespace of deployment
@@ -126,8 +129,6 @@ type Type struct {
 	DeleteOrigins bool
 	// interval between pod checks
 	PodCheckIntervalSeconds int
-	// max time to wait for pods to be ready
-	PodCheckMaxSeconds int
 	// deployments spec
 	Deployments []*Deployment
 	// services spec
@@ -136,6 +137,14 @@ type Type struct {
 	ConfigMaps []*ConfigMap
 	// WebHook spec
 	WebHooks []*WebHook
+}
+
+func (t *Type) GetPodCheckIntervalSeconds() time.Duration {
+	return time.Duration(t.PodCheckIntervalSeconds) * time.Second
+}
+
+func (t *Type) GetMaxProcessingTimeSeconds() time.Duration {
+	return time.Duration(t.MaxProcessingTimeSeconds) * time.Second
 }
 
 func (t *Type) String() string {

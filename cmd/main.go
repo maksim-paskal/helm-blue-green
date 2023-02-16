@@ -13,9 +13,12 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/maksim-paskal/helm-blue-green/internal"
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
@@ -50,7 +53,20 @@ func main() {
 
 	log.Infof("Starting helm-blue-green %s...", config.GetVersion())
 
-	if err := internal.Start(); err != nil {
+	// get background context
+	ctx, cancel := context.WithCancel(context.Background())
+	signalChanInterrupt := make(chan os.Signal, 1)
+	signal.Notify(signalChanInterrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	defer cancel()
+
+	go func() {
+		<-signalChanInterrupt
+		log.Error("Received an interrupt, stopping services...")
+		cancel()
+	}()
+
+	if err := internal.Start(ctx); err != nil {
 		log.WithError(err).Fatal()
 	}
 }

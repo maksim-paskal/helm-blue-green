@@ -29,11 +29,11 @@ import (
 type EventType string
 
 const (
-	// Processing was successful
+	// Processing was successful.
 	EventTypeSuccess EventType = "success"
-	// Something went wrong during processing
+	// Something went wrong during processing.
 	EventTypeFailed EventType = "failed"
-	// Process was successful, but no changes were made
+	// Process was successful, but no changes were made.
 	EventTypeAlreadyDeployed EventType = "already_deployed"
 )
 
