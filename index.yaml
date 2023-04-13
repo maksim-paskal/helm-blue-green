@@ -2,6 +2,18 @@ apiVersion: v1
 entries:
   helm-blue-green:
   - apiVersion: v2
+    created: "2023-04-13T06:39:13.586616481Z"
+    description: Helm Blue Green
+    digest: bcc22b6ef7f19e6d722cb692a1b129b3446365586e381e74d62cf17af909edfa
+    icon: https://helm.sh/img/helm.svg
+    maintainers:
+    - email: paskal.maksim@gmail.com
+      name: maksim-paskal
+    name: helm-blue-green
+    urls:
+    - https://github.com/maksim-paskal/helm-blue-green/releases/download/helm-blue-green-0.0.8/helm-blue-green-0.0.8.tgz
+    version: 0.0.8
+  - apiVersion: v2
     created: "2022-11-17T17:05:04.031356805Z"
     description: Helm Blue Green
     digest: 70ce51e44c30f4ce67035014f1c202285caa3908d654e04da82371d8db40947d
