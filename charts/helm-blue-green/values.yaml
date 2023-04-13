@@ -4,7 +4,7 @@ global:
 image:
   registry: docker.io
   repository: paskalmaksim/helm-blue-green
-  tag: v1.1.0
+  tag: v1.1.1
   pullPolicy: IfNotPresent
 
 nodeSelector: {}
@@ -27,6 +27,7 @@ environment: ""
 minReplicas: 2
 maxReplicas: 10
 minAvailable: 1
+maxUnavailable: 0
 averageUtilization: 60
 
 config: ""
