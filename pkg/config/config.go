@@ -16,7 +16,9 @@ import (
 	"encoding/json"
 	"flag"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
@@ -204,7 +206,7 @@ const (
 )
 
 // rewrite config values from env.
-func loadFromEnv() error { //nolint:cyclop
+func loadFromEnv() error { //nolint:cyclop,funlen
 	if namespace := os.Getenv("NAMESPACE"); len(namespace) > 0 {
 		config.Namespace = namespace
 	}
@@ -261,6 +263,47 @@ func loadFromEnv() error { //nolint:cyclop
 		}
 
 		config.Hpa.AverageUtilization = int32(averageUtilizationInt)
+	}
+
+	// load min replicas from env
+	if err := loadMinReplicasFromEnv(); err != nil {
+		return errors.Wrap(err, "error loading min replicas from env")
+	}
+
+	return nil
+}
+
+func loadMinReplicasFromEnv() error {
+	regexpMinReplicas := regexp.MustCompile("MIN_REPLICAS_([0-9]+)=[0-9]+$")
+
+	for _, envName := range os.Environ() {
+		if regexpMinReplicas.Match([]byte(envName)) {
+			envKey := regexpMinReplicas.FindStringSubmatch(envName)[1]
+
+			envKeyInt, err := strconv.ParseInt(envKey, int32Base, int32BitSize)
+			if err != nil {
+				return errors.Wrapf(err, "error parsing min replicas %s", envKey)
+			}
+
+			envValue := strings.Split(envName, "=")[1]
+
+			envValueInt, err := strconv.ParseInt(envValue, int32Base, int32BitSize)
+			if err != nil {
+				return errors.Wrapf(err, "error parsing min replicas %s", envValue)
+			}
+
+			log.Debugf("%s (%d = %d)", envName, envKeyInt, envValueInt)
+
+			if len(config.Deployments) > int(envKeyInt) {
+				log.Infof("set MinReplicas for %s from %d to %d",
+					config.Deployments[envKeyInt].Name,
+					config.Deployments[envKeyInt].MinReplicas,
+					envValueInt,
+				)
+
+				config.Deployments[envKeyInt].MinReplicas = int32(envValueInt)
+			}
+		}
 	}
 
 	return nil
