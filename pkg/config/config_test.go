@@ -24,6 +24,8 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 	t.Setenv("VERSION", "test-version-1")
 	t.Setenv("MIN_REPLICAS", "1")
 	t.Setenv("ENVIRONMENT", "testEnv")
+	t.Setenv("MIN_REPLICAS_1", "22")
+	t.Setenv("MIN_REPLICAS_1111", "0")
 
 	if err := flag.Set("config", "testdata/test_config.yaml"); err != nil {
 		t.Fatal(err)
@@ -47,5 +49,9 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 
 	if want := "testEnv"; want != config.Get().Environment {
 		t.Fatalf("Environment is not %s", want)
+	}
+
+	if want := int32(22); want != config.Get().Deployments[1].MinReplicas {
+		t.Fatalf("MinReplicas for 0 is not %d", want)
 	}
 }
