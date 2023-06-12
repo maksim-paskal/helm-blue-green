@@ -7,9 +7,14 @@ image:
   tag: v1.1.1
   pullPolicy: IfNotPresent
 
+labels: {}
+annotations: {}
 nodeSelector: {}
 affinity: []
 tolerations: []
+
+prometheus:
+  enabled: false
 
 resources:
   requests:

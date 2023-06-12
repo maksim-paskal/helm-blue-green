@@ -9,6 +9,9 @@ spec:
     metadata:
       labels:
         app: {{ include "helm-blue-green.fullname" . }}
+{{ if .Values.labels }}
+{{ toYaml .Values.labels | indent 8 }}
+{{ end }}
 {{ if .Values.annotations }}
       annotations:
 {{ toYaml .Values.annotations | indent 8 }}
@@ -32,9 +35,27 @@ spec:
 {{ toYaml .Values.tolerations | nindent 6 }}
 {{ end }}
       volumes:
+      {{ if .Values.prometheus.enabled }}
+      - name: prometheus-data
+        emptyDir: {}
+      {{ end }}
       - name: config
         configMap:
           name: {{ include "helm-blue-green.fullname" . }}
+      {{ if .Values.prometheus.enabled }}
+      initContainers:
+      # Init container to create the prometheus.yml file
+      - name: prometheus-init
+        image: alpine:3.14
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - touch /data/prometheus.yml && chmod 777 /data/prometheus.yml
+        volumeMounts:
+        - name: prometheus-data
+          mountPath: /data
+      {{ end }}
       containers:
       - name: helm-blue-green
         image: {{ printf "%s/%s:%s" (default .Values.image.registry .Values.global.imageRegistry) .Values.image.repository .Values.image.tag }}
@@ -69,6 +90,12 @@ spec:
           value: {{ .Values.maxUnavailable | quote }}
         - name: AVARAGE_UTILIZATION
           value: {{ .Values.averageUtilization | quote }}
+        {{ if .Values.prometheus.enabled }}
+        - name: PROMETHEUS_URL
+          value: "http://127.0.0.1:9090"
+        - name: PROMETHEUS_CONFIG_PATH
+          value: {{ "/data/prometheus.yml" | quote }}
+        {{ end }}
 {{ end }}
         - name: NAMESPACE
           valueFrom:
@@ -80,7 +107,41 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /config
+        {{ if .Values.prometheus.enabled }}
+        - name: prometheus-data
+          mountPath: /data
+        {{ end }}
 {{ if .Values.args }}
         args:
 {{ toYaml .Values.args | nindent 8 }}
+{{ end }}
+{{ if .Values.prometheus.enabled }}
+      - name: prometheus
+        image: prom/prometheus:v2.44.0
+        imagePullPolicy: IfNotPresent
+        args:
+        - --config.file=/data/prometheus.yml
+        - --storage.tsdb.path=/data/
+        - --storage.tsdb.retention=10m
+        - --web.enable-lifecycle
+        volumeMounts:
+        - name: prometheus-data
+          mountPath: /data
+      - name: envoy-sidecar-helper
+        image: paskalmaksim/envoy-sidecar-helper:v0.0.5
+        imagePullPolicy: IfNotPresent
+        args:
+        - -exit.zero=true
+        - -envoy.ready.check=false
+        - -envoy.endpoint.quit=/-/quit
+        - -envoy.port=9090
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
 {{ end }}
