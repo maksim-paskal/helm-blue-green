@@ -13,14 +13,17 @@ limitations under the License.
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/maksim-paskal/helm-blue-green/pkg/servicemesh"
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -31,15 +34,38 @@ import (
 var configFile = flag.String("config", os.Getenv("CONFIG_PATH"), "Path to config file")
 
 const (
-	defaultPodCheckIntervalSeconds  = 3
-	defaultMaxProcessingTimeSeconds = 600
+	defaultPodCheckIntervalSeconds               = 3
+	defaultPodCheckAvailableTimes                = 5
+	defaultMaxProcessingTimeSeconds              = 1800
+	defaultPrometheusReadyWaitStepSeconds        = 2
+	defaultPrometheusScrapeIntervalSeconds       = 3
+	defaultPrometheusCreateConfigIntervalSeconds = 5
+	defaultPrometheusAllowedMetricsRegex         = "^(envoy_cluster_upstream_rq|envoy_cluster_canary_upstream_rq)$"
+
+	defaultCanaryQualityGateMaxErrors = 10
+	defaultCanaryQualityGatePeriod    = 60
+
+	defaultPhase1CanaryPercentMin      = 10
+	defaultPhase1CanaryPercentStep     = 10
+	defaultPhase1CanaryIntervalSeconds = 30
+
+	defaultPhase1MaxExecutionTimeSecondsSeconds = 300
+	defaultPhase2MaxExecutionTimeSecondsSeconds = 300
 )
 
 var config = newConfig()
 
 func newConfig() Type {
+	defaultPhase1CanaryPercentMin := types.CanaryProviderPercent(defaultPhase1CanaryPercentMin)
+	defaultPhase1CanaryPercentMax := types.CanaryProviderPercentMax
+	defaultPhase1CanaryPercentStep := uint8(defaultPhase1CanaryPercentStep)
+	defaultPhase1CanaryIntervalSeconds := uint16(defaultPhase1CanaryIntervalSeconds)
+	defaultPhase1MaxExecutionTimeSecondsSeconds := uint16(defaultPhase1MaxExecutionTimeSecondsSeconds)
+	defaultPhase2MaxExecutionTimeSecondsSeconds := uint16(defaultPhase2MaxExecutionTimeSecondsSeconds)
+
 	return Type{
 		PodCheckIntervalSeconds:  defaultPodCheckIntervalSeconds,
+		PodCheckAvailableTimes:   defaultPodCheckAvailableTimes,
 		MaxProcessingTimeSeconds: defaultMaxProcessingTimeSeconds,
 		DeleteOrigins:            true,
 		Hpa: Hpa{
@@ -47,6 +73,32 @@ func newConfig() Type {
 		},
 		Pdb: Pdb{
 			Enabled: true,
+		},
+		Canary: &Canary{
+			Enabled:     false,
+			ServiceMesh: servicemesh.DefaultServiceMesh,
+			Strategy:    CanaryStrategyAllPhases,
+			QualityGate: &CanaryQualityGate{
+				ErrorBudgetCount:           defaultCanaryQualityGateMaxErrors,
+				ErrorBudgetPeriodInSeconds: defaultCanaryQualityGatePeriod,
+			},
+			Phase1: &CanaryPhase1{
+				Strategy:                CanaryPhase1ABTestStrategy,
+				CanaryPercentMin:        &defaultPhase1CanaryPercentMin,
+				CanaryPercentMax:        &defaultPhase1CanaryPercentMax,
+				CanaryPercentStep:       &defaultPhase1CanaryPercentStep,
+				CanaryIntervalSeconds:   &defaultPhase1CanaryIntervalSeconds,
+				MaxExecutionTimeSeconds: &defaultPhase1MaxExecutionTimeSecondsSeconds,
+			},
+			Phase2: &CanaryPhase2{
+				MaxExecutionTimeSeconds: &defaultPhase2MaxExecutionTimeSecondsSeconds,
+			},
+		},
+		Prometheus: &Prometheus{
+			AllowedMetricsRegex:         defaultPrometheusAllowedMetricsRegex,
+			ReadyWaitStepSeconds:        defaultPrometheusReadyWaitStepSeconds,
+			ScrapeIntervalSeconds:       defaultPrometheusScrapeIntervalSeconds,
+			CreateConfigIntervalSeconds: defaultPrometheusCreateConfigIntervalSeconds,
 		},
 	}
 }
@@ -77,10 +129,10 @@ func (pdb *Pdb) GetMaxUnavailable() *intstr.IntOrString {
 }
 
 type Deployment struct {
-	Name        string
-	MinReplicas int32
 	Hpa         *Hpa
 	Pdb         *Pdb
+	Name        string
+	MinReplicas int32
 }
 
 func (d *Deployment) GetMinReplicas(values *Type) int32 {
@@ -122,45 +174,214 @@ type WebHook struct {
 	Method  string
 }
 
-type Type struct {
-	// version spec
-	Version types.Version
-	// max time to all operations
-	MaxProcessingTimeSeconds int
-	// name blue green deployment, defaults to first deployment
+type CanaryService struct {
 	Name string
-	// namespace of deployment
-	Namespace string
-	// environment of deployment
-	Environment string
-	// HorizontalPodAutoscaler spec
-	Hpa Hpa
-	// PodDisruptionBudget spec
-	Pdb Pdb
-	// replicas to set for new deployments
-	MinReplicas int32
-	// flag to create new services with new version
-	CreateService bool
-	// flag to delete origin deployment,configmaps after successful deployment
-	DeleteOrigins bool
-	// interval between pod checks
-	PodCheckIntervalSeconds int
-	// deployments spec
-	Deployments []*Deployment
-	// services spec
-	Services []*Service
-	// configmaps spec
-	ConfigMaps []*ConfigMap
-	// WebHook spec
-	WebHooks []*WebHook
 }
 
-func (t *Type) GetPodCheckIntervalSeconds() time.Duration {
+type CanaryStrategy string
+
+const (
+	CanaryStrategyAllPhases  CanaryStrategy = "CanaryStrategyAllPhases"
+	CanaryStrategyOnlyPhase1 CanaryStrategy = "CanaryStrategyOnlyPhase1"
+	CanaryStrategyOnlyPhase2 CanaryStrategy = "CanaryStrategyOnlyPhase2"
+)
+
+func (e CanaryStrategy) Validate() error {
+	validStrategies := []string{
+		string(CanaryStrategyAllPhases),
+		string(CanaryStrategyOnlyPhase1),
+		string(CanaryStrategyOnlyPhase2),
+	}
+
+	for _, v := range validStrategies {
+		if e == CanaryStrategy(v) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("invalid canary strategy %s valid %s", string(e), strings.Join(validStrategies, ",")) //nolint:goerr113,lll
+}
+
+func (e CanaryStrategy) HasPhase1() bool {
+	return e == CanaryStrategyAllPhases || e == CanaryStrategyOnlyPhase1
+}
+
+func (e CanaryStrategy) HasPhase2() bool {
+	return e == CanaryStrategyAllPhases || e == CanaryStrategyOnlyPhase2
+}
+
+type CanaryPhase1Strategy string
+
+func (value CanaryPhase1Strategy) Validate() error {
+	validCanaryPhase1Strategy := []string{
+		string(CanaryPhase1CanaryStrategy),
+		string(CanaryPhase1ABTestStrategy),
+	}
+
+	for _, v := range validCanaryPhase1Strategy {
+		if v == string(value) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("invalid canary phase1 strategy %s valid %s", string(value), strings.Join(validCanaryPhase1Strategy, ",")) //nolint:goerr113,lll
+}
+
+const (
+	CanaryPhase1CanaryStrategy CanaryPhase1Strategy = "CanaryStrategy"
+	CanaryPhase1ABTestStrategy CanaryPhase1Strategy = "ABTestStrategy"
+)
+
+type CanaryPhase1 struct {
+	Strategy                CanaryPhase1Strategy
+	MaxExecutionTimeSeconds *uint16
+
+	// CanaryPhase1CanaryStrategy
+	CanaryPercentMin      *types.CanaryProviderPercent
+	CanaryPercentMax      *types.CanaryProviderPercent
+	CanaryPercentStep     *uint8
+	CanaryIntervalSeconds *uint16
+}
+
+func (cp1 *CanaryPhase1) GetCanaryInterval() time.Duration {
+	return time.Duration(*cp1.CanaryIntervalSeconds) * time.Second
+}
+
+func (cp1 *CanaryPhase1) GetMaxExecutionTime() time.Duration {
+	return time.Duration(*cp1.MaxExecutionTimeSeconds) * time.Second
+}
+
+type CanaryPhase2 struct {
+	MaxExecutionTimeSeconds *uint16
+}
+
+func (cp2 *CanaryPhase2) GetMaxExecutionTime() time.Duration {
+	return time.Duration(*cp2.MaxExecutionTimeSeconds) * time.Second
+}
+
+type CanaryQualityGate struct {
+	ErrorBudgetCount           int
+	ErrorBudgetPeriodInSeconds int
+}
+
+func (q *CanaryQualityGate) GetErrorBudgetPeriod() time.Duration {
+	return time.Duration(q.ErrorBudgetPeriodInSeconds) * time.Second
+}
+
+type Canary struct {
+	Enabled           bool
+	Strategy          CanaryStrategy
+	QualityGate       *CanaryQualityGate
+	Phase1            *CanaryPhase1
+	Phase2            *CanaryPhase2
+	ServiceMesh       string
+	ServiceMeshConfig string
+	serviceMesh       types.ServiceMesh
+	Services          []*CanaryService
+}
+
+func (c *Canary) InitServiceMesh(_ context.Context) error {
+	serviceMesh, err := servicemesh.NewServiceMesh(types.ServiceMeshConfig{
+		ServiceMesh: c.ServiceMesh,
+		Config:      c.ServiceMeshConfig,
+		Namespace:   Get().Namespace,
+	})
+	if err != nil {
+		return errors.Wrap(err, "error creating service mesh")
+	}
+
+	c.serviceMesh = serviceMesh
+
+	return nil
+}
+
+func (c *Canary) GetServiceMesh() types.ServiceMesh { //nolint:ireturn
+	return c.serviceMesh
+}
+
+type Prometheus struct {
+	URL          string
+	AuthUser     string
+	AuthPassword string
+
+	AllowedMetricsRegex string
+
+	LocalConfigPath             string
+	ReadyWaitStepSeconds        uint
+	ScrapeIntervalSeconds       uint
+	CreateConfigIntervalSeconds uint
+
+	// to reduce the number of metrics in prometheus, select only pods with these labels
+	// if empty, all pods will be selected in local prometheus
+	PodLabelSelector []string
+}
+
+func (p *Prometheus) Enabled() bool {
+	return len(p.URL) > 0
+}
+
+func (p *Prometheus) HasLocalPrometheus() bool {
+	return len(p.LocalConfigPath) > 0
+}
+
+func (p *Prometheus) GetEndpoint(action string) string {
+	return fmt.Sprintf("%s%s", p.URL, action)
+}
+
+func (p *Prometheus) GetReadyWaitStep() time.Duration {
+	return time.Duration(p.ReadyWaitStepSeconds) * time.Second
+}
+
+func (p *Prometheus) GetScrapeInterval() time.Duration {
+	return time.Duration(p.ScrapeIntervalSeconds) * time.Second
+}
+
+func (p *Prometheus) GetCreateConfigInterval() time.Duration {
+	return time.Duration(p.CreateConfigIntervalSeconds) * time.Second
+}
+
+type Type struct {
+	Canary                   *Canary
+	Version                  types.Version
+	CurrentVersion           types.Version
+	Name                     string
+	Namespace                string
+	Environment              string
+	Deployments              []*Deployment
+	Services                 []*Service
+	ConfigMaps               []*ConfigMap
+	WebHooks                 []*WebHook
+	Pdb                      Pdb
+	PodCheckIntervalSeconds  int32
+	PodCheckAvailableTimes   int32
+	MaxProcessingTimeSeconds int32
+	Hpa                      Hpa
+	MinReplicas              int32
+	CreateService            bool
+	DeleteOrigins            bool
+	canNotRollback           bool
+	Prometheus               *Prometheus
+}
+
+func (t *Type) GetPodCheckInterval() time.Duration {
 	return time.Duration(t.PodCheckIntervalSeconds) * time.Second
 }
 
-func (t *Type) GetMaxProcessingTimeSeconds() time.Duration {
+func (t *Type) GetMaxProcessingTime() time.Duration {
 	return time.Duration(t.MaxProcessingTimeSeconds) * time.Second
+}
+
+func (t *Type) HasCanary() bool {
+	return t.Canary != nil && t.Canary.Enabled
+}
+
+func (t *Type) CanRollBack() bool {
+	return !t.canNotRollback
+}
+
+// after that time rollback will not available.
+func (t *Type) SetCanNotRollback() {
+	t.canNotRollback = true
 }
 
 func (t *Type) String() string {
@@ -176,12 +397,12 @@ func Get() *Type {
 	return &config
 }
 
-func Validate() error {
+func Validate(ctx context.Context) error { //nolint:cyclop
 	if len(config.Namespace) == 0 {
 		return errors.New("namespace is not set")
 	}
 
-	if len(config.Version.Value) == 0 {
+	if !config.Version.IsNotEmpty() {
 		return errors.New("version is not set")
 	}
 
@@ -195,6 +416,32 @@ func Validate() error {
 
 	if config.MinReplicas == 0 {
 		return errors.New("no deployments min replicas specified")
+	}
+
+	for i, deployment := range config.Deployments {
+		if len(deployment.Name) == 0 {
+			return fmt.Errorf("deployment %d name is not set", i) //nolint:goerr113
+		}
+	}
+
+	for i, service := range config.Services {
+		if len(service.Name) == 0 {
+			return fmt.Errorf("service %d name is not set", i) //nolint:goerr113
+		}
+	}
+
+	if config.HasCanary() {
+		if err := config.Canary.Strategy.Validate(); err != nil {
+			return errors.Wrap(err, "invalid canary strategy")
+		}
+
+		if err := config.Canary.Phase1.Strategy.Validate(); err != nil {
+			return errors.Wrap(err, "invalid phase1 strategy")
+		}
+
+		if err := config.Canary.InitServiceMesh(ctx); err != nil {
+			return errors.Wrap(err, "error initializing servicemesh")
+		}
 	}
 
 	return nil
@@ -270,6 +517,18 @@ func loadFromEnv() error { //nolint:cyclop,funlen
 		return errors.Wrap(err, "error loading min replicas from env")
 	}
 
+	if canaryEnabled := os.Getenv("CANARY_ENABLED"); canaryEnabled == "true" {
+		config.Canary.Enabled = true
+	}
+
+	if localConfigPath := os.Getenv("PROMETHEUS_CONFIG_PATH"); len(localConfigPath) > 0 {
+		config.Prometheus.LocalConfigPath = localConfigPath
+	}
+
+	if prometheusURL := os.Getenv("PROMETHEUS_URL"); len(prometheusURL) > 0 {
+		config.Prometheus.URL = prometheusURL
+	}
+
 	return nil
 }
 
@@ -277,7 +536,7 @@ func loadMinReplicasFromEnv() error {
 	regexpMinReplicas := regexp.MustCompile("MIN_REPLICAS_([0-9]+)=[0-9]+$")
 
 	for _, envName := range os.Environ() {
-		if regexpMinReplicas.Match([]byte(envName)) {
+		if regexpMinReplicas.MatchString(envName) {
 			envKey := regexpMinReplicas.FindStringSubmatch(envName)[1]
 
 			envKeyInt, err := strconv.ParseInt(envKey, int32Base, int32BitSize)
@@ -309,7 +568,7 @@ func loadMinReplicasFromEnv() error {
 	return nil
 }
 
-func Load() error {
+func Load(ctx context.Context) error {
 	configBytes, err := os.ReadFile(*configFile)
 	if err != nil {
 		return errors.Wrap(err, "error reading config file")
@@ -337,7 +596,7 @@ func Load() error {
 		return errors.Wrap(err, "error loading from env")
 	}
 
-	err = Validate()
+	err = Validate(ctx)
 	if err != nil {
 		return errors.Wrap(err, "error validating config file")
 	}

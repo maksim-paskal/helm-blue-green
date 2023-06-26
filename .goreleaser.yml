@@ -3,22 +3,22 @@ release:
   footer: |
     ## Docker Images
     - `paskalmaksim/{{.ProjectName}}:latest`
-    - `paskalmaksim/{{.ProjectName}}:{{.Tag}}`
+    - `paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}`
 docker_manifests:
 - name_template: paskalmaksim/{{.ProjectName}}:latest
   image_templates:
-  - paskalmaksim/{{.ProjectName}}:{{.Tag}}-amd64
-  - paskalmaksim/{{.ProjectName}}:{{.Tag}}-arm64
-- name_template: paskalmaksim/{{.ProjectName}}:{{.Tag}}
+  - paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}-amd64
+  - paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}-arm64
+- name_template: paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}
   image_templates:
-  - paskalmaksim/{{.ProjectName}}:{{.Tag}}-amd64
-  - paskalmaksim/{{.ProjectName}}:{{.Tag}}-arm64
+  - paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}-amd64
+  - paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}-arm64
 dockers:
 - use: buildx
   goos: linux
   goarch: amd64
   image_templates:
-  - paskalmaksim/{{.ProjectName}}:{{ .Tag }}-amd64
+  - paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}-amd64
   build_flag_templates:
   - "--platform=linux/amd64"
   - "--label=org.opencontainers.image.created={{.Date}}"
@@ -29,7 +29,7 @@ dockers:
   goos: linux
   goarch: arm64
   image_templates:
-  - paskalmaksim/{{.ProjectName}}:{{.Tag}}-arm64
+  - paskalmaksim/{{.ProjectName}}:{{if .IsSnapshot}}{{.Version}}{{else}}{{.Tag}}{{end}}-arm64
   build_flag_templates:
   - "--build-arg=APPVERSION={{.ShortCommit}}"
   - "--platform=linux/arm64/v8"
@@ -44,7 +44,7 @@ builds:
   flags:
   - -trimpath
   ldflags:
-  - -X github.com/maksim-paskal/helm-blue-green/pkg/config.gitVersion={{.Version}}-{{.ShortCommit}}-{{.Timestamp}}
+  - -s -w -X github.com/maksim-paskal/helm-blue-green/pkg/config.gitVersion={{.Version}}-{{.ShortCommit}}-{{.Timestamp}}
   goos:
   - linux
   goarch:
@@ -53,7 +53,7 @@ builds:
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  name_template: "beta"
 changelog:
   sort: asc
   filters:

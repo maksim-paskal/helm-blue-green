@@ -20,7 +20,7 @@ spec:
       restartPolicy: {{ .Values.restartPolicy }}
       serviceAccountName: {{ include "helm-blue-green.fullname" . }}
 {{ if .Values.priorityClassName }}
-      podPriorityClassName: {{ .Values.priorityClassName | quote }}
+      priorityClassName: {{ .Values.priorityClassName | quote }}
 {{ end }}
 {{ if .Values.nodeSelector }}
       nodeSelector:
@@ -34,6 +34,16 @@ spec:
       tolerations:
 {{ toYaml .Values.tolerations | nindent 6 }}
 {{ end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 30001
+        runAsGroup: 30001
+        privileged: false
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
       volumes:
       {{ if .Values.prometheus.enabled }}
       - name: prometheus-data
@@ -48,10 +58,14 @@ spec:
       - name: prometheus-init
         image: alpine:3.14
         imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 10m
+            memory: 100Mi
         command:
         - /bin/sh
         - -c
-        - touch /data/prometheus.yml && chmod 777 /data/prometheus.yml
+        - touch /data/prometheus.yml
         volumeMounts:
         - name: prometheus-data
           mountPath: /data
@@ -60,16 +74,6 @@ spec:
       - name: helm-blue-green
         image: {{ printf "%s/%s:%s" (default .Values.image.registry .Values.global.imageRegistry) .Values.image.repository .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 30001
-          runAsGroup: 30001
-          privileged: false
-          readOnlyRootFilesystem: true
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
         resources:
 {{ toYaml .Values.resources | indent 10 }}
         env:
@@ -77,6 +81,12 @@ spec:
           value: {{ .Values.configPath | quote }}
         - name: VERSION
           value: {{ .Values.version | quote }}
+{{ if .Values.prometheus.enabled }}
+        - name: PROMETHEUS_URL
+          value: "http://127.0.0.1:9090"
+        - name: PROMETHEUS_CONFIG_PATH
+          value: {{ "/data/prometheus.yml" | quote }}
+{{ end }}
 {{ if .Values.useDefaultsEnv }}
         - name: ENVIRONMENT
           value: {{ .Values.environment | quote }}
@@ -90,12 +100,8 @@ spec:
           value: {{ .Values.maxUnavailable | quote }}
         - name: AVARAGE_UTILIZATION
           value: {{ .Values.averageUtilization | quote }}
-        {{ if .Values.prometheus.enabled }}
-        - name: PROMETHEUS_URL
-          value: "http://127.0.0.1:9090"
-        - name: PROMETHEUS_CONFIG_PATH
-          value: {{ "/data/prometheus.yml" | quote }}
-        {{ end }}
+        - name: CANARY_ENABLED
+          value: {{ .Values.canaryEnabled | quote }}
 {{ end }}
         - name: NAMESPACE
           valueFrom:
@@ -119,6 +125,8 @@ spec:
       - name: prometheus
         image: prom/prometheus:v2.44.0
         imagePullPolicy: IfNotPresent
+        resources:
+{{ toYaml .Values.prometheus.resources | indent 10 }}
         args:
         - --config.file=/data/prometheus.yml
         - --storage.tsdb.path=/data/
@@ -130,6 +138,10 @@ spec:
       - name: envoy-sidecar-helper
         image: paskalmaksim/envoy-sidecar-helper:v0.0.5
         imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 10m
+            memory: 100Mi
         args:
         - -exit.zero=true
         - -envoy.ready.check=false

@@ -15,13 +15,14 @@ package e2e_test
 import (
 	"context"
 	"flag"
+	"os"
+	"os/signal"
+	"syscall"
 	"testing"
 
 	"github.com/maksim-paskal/helm-blue-green/internal"
 	log "github.com/sirupsen/logrus"
 )
-
-var ctx = context.Background()
 
 func TestApplication(t *testing.T) {
 	t.Parallel()
@@ -35,7 +36,23 @@ func TestApplication(t *testing.T) {
 		"testdata/test3.yaml",
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signalChanInterrupt := make(chan os.Signal, 1)
+	signal.Notify(signalChanInterrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-signalChanInterrupt
+		log.Error("Received an interrupt, stopping services...")
+		cancel()
+	}()
+
 	for _, test := range tests {
+		if ctx.Err() != nil {
+			t.Fatal(ctx.Err())
+		}
+
 		log.Infof("Starting test %s", test)
 
 		if err := flag.Set("config", test); err != nil {

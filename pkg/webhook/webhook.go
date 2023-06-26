@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -33,6 +34,8 @@ const (
 	EventTypeSuccess EventType = "success"
 	// Something went wrong during processing.
 	EventTypeFailed EventType = "failed"
+	// Quality gate forbids deployment.
+	EventTypeBadQuality EventType = "failed_bad_quality"
 	// Process was successful, but no changes were made.
 	EventTypeAlreadyDeployed EventType = "already_deployed"
 )
@@ -45,6 +48,7 @@ type Event struct {
 	Version     string
 	OldVersion  string
 	Duration    string
+	Metrics     map[string]string
 }
 
 // return query string with not empty elements.
@@ -59,6 +63,16 @@ func (e *Event) GetQueryString() string {
 	q = append(q, "event.OldVersion="+url.QueryEscape(e.OldVersion))
 	q = append(q, "event.Duration="+url.QueryEscape(e.Duration))
 
+	if e.Metrics != nil {
+		for k, v := range e.Metrics {
+			if v != "0" {
+				q = append(q, "event.Metrics."+k+"="+url.QueryEscape(v))
+			}
+		}
+	}
+
+	sort.Strings(q)
+
 	queryString := make([]string, 0)
 
 	for _, v := range q {
@@ -70,6 +84,23 @@ func (e *Event) GetQueryString() string {
 	}
 
 	return strings.Join(queryString, "&")
+}
+
+const (
+	okEmoji    = "\u2705"
+	errorEmoji = "\u274C"
+)
+
+func (e *Event) GetQueryStringEmoji() string {
+	newEvent := *e
+
+	if newEvent.Type == EventTypeSuccess || newEvent.Type == EventTypeAlreadyDeployed {
+		newEvent.Type += okEmoji
+	} else {
+		newEvent.Type += errorEmoji
+	}
+
+	return newEvent.GetQueryString()
 }
 
 // return query string with not empty elements.

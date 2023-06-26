@@ -10,3 +10,4 @@ linters:
   - exhaustruct
   - exhaustivestruct
   - musttag
+  - depguard

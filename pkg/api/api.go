@@ -15,10 +15,13 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/client"
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
+	"github.com/maksim-paskal/helm-blue-green/pkg/types"
+	"github.com/maksim-paskal/helm-blue-green/pkg/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -39,10 +42,17 @@ const (
 	labelVersion   = labelNamespace + "/version"
 )
 
-func labels(values *config.Type, labels map[string]string) {
-	labels[values.Version.Key()] = values.Version.Value
-	labels[labelScope] = values.Version.Scope
-	labels[labelVersion] = values.Version.Value
+func labels(version types.Version, labels map[string]string) {
+	// remove all old labels from previous versions
+	for k := range labels {
+		if strings.HasPrefix(k, labelNamespace+"/") {
+			delete(labels, k)
+		}
+	}
+
+	labels[version.Key()] = version.Value
+	labels[labelScope] = version.Scope
+	labels[labelVersion] = version.Value
 }
 
 func CopyDeployment(ctx context.Context, item *config.Deployment, values *config.Type) error {
@@ -58,9 +68,9 @@ func CopyDeployment(ctx context.Context, item *config.Deployment, values *config
 	newDeploy := deploy.DeepCopy()
 	newDeploy.ResourceVersion = ""
 
-	labels(values, newDeploy.Labels)
-	labels(values, newDeploy.Spec.Template.Labels)
-	labels(values, newDeploy.Spec.Selector.MatchLabels)
+	labels(values.Version, newDeploy.Labels)
+	labels(values.Version, newDeploy.Spec.Template.Labels)
+	labels(values.Version, newDeploy.Spec.Selector.MatchLabels)
 
 	newDeploy.Name = fmt.Sprintf("%s-%s", item.Name, values.Version.Value)
 
@@ -113,8 +123,8 @@ func CopyService(ctx context.Context, item *config.Service, values *config.Type)
 	newService.Spec.ClusterIP = ""
 	newService.Spec.ClusterIPs = nil
 
-	labels(values, newService.Labels)
-	labels(values, newService.Spec.Selector)
+	labels(values.Version, newService.Labels)
+	labels(values.Version, newService.Spec.Selector)
 
 	newService.Name = fmt.Sprintf("%s-%s", item.Name, values.Version.Value)
 
@@ -137,7 +147,7 @@ func CopyConfigMap(ctx context.Context, item *config.ConfigMap, values *config.T
 	newConfigMap := configMap.DeepCopy()
 	newConfigMap.ResourceVersion = ""
 
-	labels(values, newConfigMap.Labels)
+	labels(values.Version, newConfigMap.Labels)
 
 	newConfigMap.Name = fmt.Sprintf("%s-%s", item.Name, values.Version.Value)
 
@@ -152,9 +162,12 @@ func CopyConfigMap(ctx context.Context, item *config.ConfigMap, values *config.T
 }
 
 func WaitForPodsToBeReady(ctx context.Context, values *config.Type) error { //nolint:cyclop
+	defer utils.TimeTrack("api.WaitForPodsToBeReady", time.Now())
+
 	log.Debugf("Waiting for pods to be ready %s/%s", values.Namespace, values.Version.String())
 
 	targetMinReplicas := 0
+	counterPodsAvailable := 0
 
 	for _, item := range values.Deployments {
 		targetMinReplicas += int(item.GetMinReplicas(values))
@@ -185,30 +198,39 @@ func WaitForPodsToBeReady(ctx context.Context, values *config.Type) error { //no
 			}
 		}
 
-		log.Infof("Waiting for pods %s to be ready %d/%d", values.Version.String(), ready, targetMinReplicas)
-
 		if ready >= targetMinReplicas {
+			log.Info("All pods are ready, waiting for additional time to be sure")
+			counterPodsAvailable++
+		}
+
+		if counterPodsAvailable > int(values.PodCheckAvailableTimes) {
 			break
 		}
 
-		time.Sleep(values.GetPodCheckIntervalSeconds())
+		log.Infof("Waiting %s for pods %s to be ready %d/%d",
+			values.GetPodCheckInterval().String(),
+			values.Version.String(),
+			ready,
+			targetMinReplicas,
+		)
+		utils.SleepWithContext(ctx, values.GetPodCheckInterval())
 	}
 
 	return nil
 }
 
-func UpdateServicesSelector(ctx context.Context, item *config.Service, values *config.Type) error {
+func UpdateServiceSelector(ctx context.Context, serviceName string, values *config.Type, version types.Version) error {
 	err := wait.ExponentialBackoff(retry.DefaultBackoff, func() (bool, error) {
-		service, err := kube().CoreV1().Services(values.Namespace).Get(ctx, item.Name, metav1.GetOptions{})
+		service, err := kube().CoreV1().Services(values.Namespace).Get(ctx, serviceName, metav1.GetOptions{})
 		if err != nil {
 			return false, errors.Wrap(err, "error getting service")
 		}
 
-		labels(values, service.Spec.Selector)
+		labels(version, service.Spec.Selector)
 
 		_, err = kube().CoreV1().Services(values.Namespace).Update(ctx, service, metav1.UpdateOptions{})
 		if err != nil {
-			log.Warn(apierrorrs.ReasonForError(err))
+			log.WithError(err).Warn(apierrorrs.ReasonForError(err))
 		}
 
 		switch {
@@ -289,7 +311,7 @@ func ScaleDeployment(ctx context.Context, item *config.Deployment, replicas int3
 
 		_, err = kube().AppsV1().Deployments(values.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
 		if err != nil {
-			log.Warn(err)
+			log.WithError(err).Warn(apierrorrs.ReasonForError(err))
 		}
 
 		switch {
@@ -310,17 +332,24 @@ func ScaleDeployment(ctx context.Context, item *config.Deployment, replicas int3
 	return nil
 }
 
-func GetCurrentVersion(ctx context.Context, values *config.Type) (string, error) {
+func GetCurrentVersion(ctx context.Context, values *config.Type) (types.Version, error) {
+	version := types.Version{
+		Scope: values.Version.Scope,
+		Value: "",
+	}
+
 	// use first service to get current version of traffic
 	service, err := kube().CoreV1().Services(values.Namespace).Get(ctx, values.Services[0].Name, metav1.GetOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "error getting service")
+		return version, errors.Wrap(err, "error getting service")
 	}
 
-	version, ok := service.Spec.Selector[values.Version.Key()]
+	serviceVersion, ok := service.Spec.Selector[values.Version.Key()]
 	if !ok {
-		return "", nil
+		return version, nil
 	}
+
+	version.Value = serviceVersion
 
 	return version, nil
 }
@@ -332,7 +361,7 @@ func DeleteOrigins(ctx context.Context, values *config.Type) error { //nolint:cy
 		err := wait.ExponentialBackoff(retry.DefaultBackoff, func() (bool, error) {
 			err := kube().AppsV1().Deployments(values.Namespace).Delete(ctx, itemCopy.Name, metav1.DeleteOptions{})
 			if err != nil {
-				log.Warn(apierrorrs.ReasonForError(err))
+				log.WithError(err).Warn(apierrorrs.ReasonForError(err))
 			}
 
 			switch {
@@ -357,7 +386,7 @@ func DeleteOrigins(ctx context.Context, values *config.Type) error { //nolint:cy
 		err := wait.ExponentialBackoff(retry.DefaultBackoff, func() (bool, error) {
 			err := kube().CoreV1().ConfigMaps(values.Namespace).Delete(ctx, itemCopy.Name, metav1.DeleteOptions{})
 			if err != nil {
-				log.Warn(apierrorrs.ReasonForError(err))
+				log.WithError(err).Warn(apierrorrs.ReasonForError(err))
 			}
 
 			switch {

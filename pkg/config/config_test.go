@@ -13,6 +13,7 @@ limitations under the License.
 package config_test
 
 import (
+	"context"
 	"flag"
 	"testing"
 
@@ -20,6 +21,8 @@ import (
 )
 
 func TestConfig(t *testing.T) { //nolint:paralleltest
+	ctx := context.Background()
+
 	t.Setenv("NAMESPACE", "default")
 	t.Setenv("VERSION", "test-version-1")
 	t.Setenv("MIN_REPLICAS", "1")
@@ -31,7 +34,7 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 		t.Fatal(err)
 	}
 
-	if err := config.Load(); err != nil {
+	if err := config.Load(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,5 +56,31 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 
 	if want := int32(22); want != config.Get().Deployments[1].MinReplicas {
 		t.Fatalf("MinReplicas for 0 is not %d", want)
+	}
+}
+
+func TestHasPhases(t *testing.T) {
+	t.Parallel()
+
+	testConfig := config.Type{
+		Canary: &config.Canary{
+			Strategy: config.CanaryStrategyAllPhases,
+		},
+	}
+
+	if !(testConfig.Canary.Strategy.HasPhase1() && testConfig.Canary.Strategy.HasPhase2()) {
+		t.Fatal("CanaryStrategyAllPhases problems")
+	}
+
+	testConfig.Canary.Strategy = config.CanaryStrategyOnlyPhase1
+
+	if !(testConfig.Canary.Strategy.HasPhase1() && !testConfig.Canary.Strategy.HasPhase2()) {
+		t.Fatal("CanaryStrategyOnlyPhase1 problems")
+	}
+
+	testConfig.Canary.Strategy = config.CanaryStrategyOnlyPhase2
+
+	if !(!testConfig.Canary.Strategy.HasPhase1() && testConfig.Canary.Strategy.HasPhase2()) {
+		t.Fatal("CanaryStrategyOnlyPhase2 problems")
 	}
 }

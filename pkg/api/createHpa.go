@@ -50,7 +50,7 @@ func createHPA(ctx context.Context, deploymentName string, hpaConfig config.Hpa,
 		},
 	}
 
-	labels(values, hpa.ObjectMeta.Labels)
+	labels(values.Version, hpa.ObjectMeta.Labels)
 
 	_, err := kube().AutoscalingV2().HorizontalPodAutoscalers(values.Namespace).Create(ctx, hpa, metav1.CreateOptions{})
 	if err != nil {
