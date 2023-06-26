@@ -42,7 +42,7 @@ func deleteServices(ctx context.Context, config *config.Type, labelSelector stri
 
 			err = deleteType.Delete(ctx, item.Name, metav1.DeleteOptions{})
 			if err != nil {
-				log.Warn(apierrorrs.ReasonForError(err))
+				log.WithError(err).Warn(apierrorrs.ReasonForError(err))
 			}
 
 			switch {

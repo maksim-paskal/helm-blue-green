@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
+	"github.com/maksim-paskal/helm-blue-green/pkg/metrics"
 	"github.com/maksim-paskal/helm-blue-green/pkg/webhook"
 )
 
@@ -122,11 +123,16 @@ func TestEventFormat(t *testing.T) {
 		Duration:    "6",
 	}
 
+	metrics.SetTotal(1, 1)
+	metrics.SetBad(1, 1)
+
+	event.Metrics = metrics.GetMetricsMap()
+
 	tests := make(map[string]string, 0)
-	tests["{{ .GetQueryString }}"] = "event.Type=success&event.Name=1&event.Namespace=2&event.Environment=3&event.Version=4&event.OldVersion=5&event.Duration=6" //nolint:lll
+	tests["{{ .GetQueryString }}"] = "event.Duration=6&event.Environment=3&event.Metrics.Phase1Bad=1&event.Metrics.Phase1Total=1&event.Name=1&event.Namespace=2&event.OldVersion=5&event.Type=success&event.Version=4" //nolint:lll
 	tests["{{ .Type }}"] = "success"
 	tests["{{ .Version }}"] = "4"
-	tests["{{ .GetJSON }}"] = `{"Type":"success","Name":"1","Namespace":"2","Environment":"3","Version":"4","OldVersion":"5","Duration":"6"}` //nolint:lll
+	tests["{{ .GetJSON }}"] = `{"Type":"success","Name":"1","Namespace":"2","Environment":"3","Version":"4","OldVersion":"5","Duration":"6","Metrics":{"Phase1Bad":"1","Phase1Total":"1","Phase2Bad":"0","Phase2Total":"0"}}` //nolint:lll
 	tests["WW{{ .Version }}WW"] = "WW4WW"
 	tests["test"] = "test"
 	tests[""] = ""
@@ -137,5 +143,31 @@ func TestEventFormat(t *testing.T) {
 		} else if result != value {
 			t.Errorf("expected %s, got %s", value, result)
 		}
+	}
+}
+
+func TestGetQueryStringEmoji(t *testing.T) {
+	t.Parallel()
+
+	event := webhook.Event{
+		Type: webhook.EventTypeSuccess,
+	}
+
+	if want := "event.Type=success\u2705"; event.GetQueryStringEmoji() != want {
+		t.Errorf("expected %s, got %s", want, event.GetQueryStringEmoji())
+	}
+
+	if event.Type != webhook.EventTypeSuccess {
+		t.Errorf("expected %s, got %s", webhook.EventTypeSuccess, event.Type)
+	}
+
+	event.Type = webhook.EventTypeFailed
+
+	if want := "event.Type=failed\u274C"; event.GetQueryStringEmoji() != want {
+		t.Errorf("expected %s, got %s", want, event.GetQueryStringEmoji())
+	}
+
+	if event.Type != webhook.EventTypeFailed {
+		t.Errorf("expected %s, got %s", webhook.EventTypeSuccess, event.Type)
 	}
 }

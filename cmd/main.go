@@ -14,6 +14,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/maksim-paskal/helm-blue-green/internal"
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
+	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -55,18 +57,26 @@ func main() {
 
 	// get background context
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	signalChanInterrupt := make(chan os.Signal, 1)
 	signal.Notify(signalChanInterrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	defer cancel()
-
 	go func() {
-		<-signalChanInterrupt
-		log.Error("Received an interrupt, stopping services...")
-		cancel()
+		select {
+		case <-ctx.Done():
+		case <-signalChanInterrupt:
+			log.Error("Received an interrupt, stopping services...")
+			cancel()
+		}
 	}()
 
 	if err := internal.Start(ctx); err != nil {
-		log.WithError(err).Fatal()
+		// do not retry process if new release was failed by quality check
+		if errors.Is(err, types.ErrNewReleaseBadQuality) {
+			log.WithError(err).Error()
+		} else {
+			log.WithError(err).Fatal()
+		}
 	}
 }

@@ -11,9 +11,19 @@ lint:
 build:
 	git tag -d `git tag -l "helm-blue-green-*"`
 	git tag -d `git tag -l "helm-chart-*"`
-	go run github.com/goreleaser/goreleaser@latest build --rm-dist --snapshot --skip-validate
+	go run github.com/goreleaser/goreleaser@latest build --clean --snapshot --skip-validate
 	mv ./dist/helm-blue-green_linux_amd64_v1/helm-blue-green ./helm-blue-green
 	docker buildx build --platform=linux/amd64 --pull --push . -t $(image)
+promote-to-beta:
+	git tag -d `git tag -l "helm-blue-green-*"`
+	git tag -d `git tag -l "helm-chart-*"`
+	go run github.com/goreleaser/goreleaser@latest release --clean --snapshot
+	docker push paskalmaksim/helm-blue-green:beta-arm64
+	docker push paskalmaksim/helm-blue-green:beta-amd64
+	docker manifest create --amend paskalmaksim/helm-blue-green:beta \
+	paskalmaksim/helm-blue-green:beta-arm64 \
+	paskalmaksim/helm-blue-green:beta-amd64
+	docker manifest push --purge paskalmaksim/helm-blue-green:beta
 clean:
 	helm --namespace helm-blue-green delete helm-blue-green || true
 	kubectl delete ns helm-blue-green || true
@@ -50,7 +60,8 @@ test:
 	go mod tidy
 	go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run -v
 run:
-	go run --race ./cmd \
+	NAMESPACE=default go run --race ./cmd \
+	--config=./e2e/testdata/test2.yaml \
 	--log.level=debug \
 	--log.json=false \
 	--kubeconfig $(KUBECONFIG)

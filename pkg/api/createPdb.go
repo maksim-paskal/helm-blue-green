@@ -35,7 +35,7 @@ func createPdb(ctx context.Context, newDeploy *appsv1.Deployment, pdbConfig conf
 			},
 		},
 	}
-	labels(values, pdb.ObjectMeta.Labels)
+	labels(values.Version, pdb.ObjectMeta.Labels)
 
 	if pdbConfig.MinAvailable > 0 {
 		pdb.Spec.MinAvailable = pdbConfig.GetMinAvailable()

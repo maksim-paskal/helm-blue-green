@@ -4,9 +4,10 @@ global:
 image:
   registry: docker.io
   repository: paskalmaksim/helm-blue-green
-  tag: v1.1.1
+  tag: v1.1.2
   pullPolicy: IfNotPresent
 
+priorityClassName: ""
 labels: {}
 annotations: {}
 nodeSelector: {}
@@ -15,6 +16,10 @@ tolerations: []
 
 prometheus:
   enabled: false
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
 
 resources:
   requests:
@@ -34,6 +39,7 @@ maxReplicas: 10
 minAvailable: 1
 maxUnavailable: 0
 averageUtilization: 60
+canaryEnabled: false
 
 config: ""
 extraConfig: ""

@@ -17,3 +17,16 @@ helm-blue-green:
     - url: https://get.paskal-dev.com
       headers:
         "test": "value"
+
+    canary:
+      enabled: true
+      serviceMeshConfig: |-
+        configMaps:
+        - test-config
+        clusters:
+        - clusterName: http-echo
+          clusterNameCanary: http-echo-canary
+        - clusterName: egress-paket
+          clusterNameCanary: egress-paket
+      services:
+      - name: http-echo-canary

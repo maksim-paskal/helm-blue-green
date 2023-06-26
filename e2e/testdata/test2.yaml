@@ -35,3 +35,27 @@ configMaps:
 - name: http-echo1
 - name: http-echo2
 - name: http-echo3
+
+prometheus:
+  podLabelSelector:
+  - app=test
+
+canary:
+  enabled: true
+  phase1:
+    maxExecutionTimeSeconds: 10
+  phase2:
+    maxExecutionTimeSeconds: 10
+  serviceMeshConfig: |-
+    configMaps:
+    - http-echo1
+    - http-echo2
+    - http-echo3
+    clusters:
+    - clusterName: http-echo1
+      clusterNameCanary: http-echo1-canary
+    - clusterName: http-echo2
+      clusterNameCanary: http-echo2-canary
+  services:
+  - name: http-echo1-canary
+  - name: http-echo2-canary

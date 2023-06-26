@@ -51,6 +51,20 @@ spec:
     app: {{ . }}
 ---
 apiVersion: v1
+kind: Service
+metadata:
+  name: {{ . }}-canary
+  labels:
+    app: {{ . }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5678
+    protocol: TCP
+  selector:
+    app: {{ . }}
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ . }}
