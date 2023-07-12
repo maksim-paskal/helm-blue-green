@@ -43,6 +43,11 @@ func Init() error {
 	return nil
 }
 
+// Client init for tests.
+func FakeInit() {
+	Client = &client{}
+}
+
 func newClient() (*client, error) {
 	client := client{
 		stopCh: make(chan struct{}),

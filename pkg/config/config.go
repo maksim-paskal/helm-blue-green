@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/servicemesh"
+	"github.com/maksim-paskal/helm-blue-green/pkg/template"
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -39,6 +40,7 @@ const (
 	defaultMaxProcessingTimeSeconds              = 1800
 	defaultPrometheusReadyWaitStepSeconds        = 2
 	defaultPrometheusScrapeIntervalSeconds       = 3
+	defaultPrometheusScrapeWaitSeconds           = 0
 	defaultPrometheusCreateConfigIntervalSeconds = 5
 	defaultPrometheusAllowedMetricsRegex         = "^(envoy_cluster_upstream_rq|envoy_cluster_canary_upstream_rq)$"
 
@@ -46,8 +48,8 @@ const (
 	defaultCanaryQualityGatePeriod    = 60
 
 	defaultPhase1CanaryPercentMin      = 10
-	defaultPhase1CanaryPercentStep     = 10
-	defaultPhase1CanaryIntervalSeconds = 30
+	defaultPhase1CanaryPercentStep     = 5
+	defaultPhase1CanaryIntervalSeconds = 3
 
 	defaultPhase1MaxExecutionTimeSecondsSeconds = 300
 	defaultPhase2MaxExecutionTimeSecondsSeconds = 300
@@ -62,16 +64,20 @@ func newConfig() Type {
 	defaultPhase1CanaryIntervalSeconds := uint16(defaultPhase1CanaryIntervalSeconds)
 	defaultPhase1MaxExecutionTimeSecondsSeconds := uint16(defaultPhase1MaxExecutionTimeSecondsSeconds)
 	defaultPhase2MaxExecutionTimeSecondsSeconds := uint16(defaultPhase2MaxExecutionTimeSecondsSeconds)
+	defaultCanaryQualityGateMaxErrors := defaultCanaryQualityGateMaxErrors
+	defaultCanaryQualityGatePeriod := defaultCanaryQualityGatePeriod
 
 	return Type{
+		Version:                  &types.Version{},
+		CurrentVersion:           &types.Version{},
 		PodCheckIntervalSeconds:  defaultPodCheckIntervalSeconds,
 		PodCheckAvailableTimes:   defaultPodCheckAvailableTimes,
 		MaxProcessingTimeSeconds: defaultMaxProcessingTimeSeconds,
 		DeleteOrigins:            true,
-		Hpa: Hpa{
+		Hpa: &Hpa{
 			Enabled: true,
 		},
-		Pdb: Pdb{
+		Pdb: &Pdb{
 			Enabled: true,
 		},
 		Canary: &Canary{
@@ -79,8 +85,8 @@ func newConfig() Type {
 			ServiceMesh: servicemesh.DefaultServiceMesh,
 			Strategy:    CanaryStrategyAllPhases,
 			QualityGate: &CanaryQualityGate{
-				ErrorBudgetCount:           defaultCanaryQualityGateMaxErrors,
-				ErrorBudgetPeriodInSeconds: defaultCanaryQualityGatePeriod,
+				ErrorBudgetCount:           &defaultCanaryQualityGateMaxErrors,
+				ErrorBudgetPeriodInSeconds: &defaultCanaryQualityGatePeriod,
 			},
 			Phase1: &CanaryPhase1{
 				Strategy:                CanaryPhase1ABTestStrategy,
@@ -91,6 +97,7 @@ func newConfig() Type {
 				MaxExecutionTimeSeconds: &defaultPhase1MaxExecutionTimeSecondsSeconds,
 			},
 			Phase2: &CanaryPhase2{
+				WaitErrorBudgetPeriod:   false,
 				MaxExecutionTimeSeconds: &defaultPhase2MaxExecutionTimeSecondsSeconds,
 			},
 		},
@@ -99,6 +106,7 @@ func newConfig() Type {
 			ReadyWaitStepSeconds:        defaultPrometheusReadyWaitStepSeconds,
 			ScrapeIntervalSeconds:       defaultPrometheusScrapeIntervalSeconds,
 			CreateConfigIntervalSeconds: defaultPrometheusCreateConfigIntervalSeconds,
+			ScrapeWaitSeconds:           defaultPrometheusScrapeWaitSeconds,
 		},
 	}
 }
@@ -143,17 +151,17 @@ func (d *Deployment) GetMinReplicas(values *Type) int32 {
 	return values.MinReplicas
 }
 
-func (d *Deployment) GetHpa(values *Type) Hpa {
+func (d *Deployment) GetHpa(values *Type) *Hpa {
 	if d.Hpa != nil {
-		return *d.Hpa
+		return d.Hpa
 	}
 
 	return values.Hpa
 }
 
-func (d *Deployment) GetPdb(values *Type) Pdb {
+func (d *Deployment) GetPdb(values *Type) *Pdb {
 	if d.Pdb != nil {
-		return *d.Pdb
+		return d.Pdb
 	}
 
 	return values.Pdb
@@ -232,9 +240,45 @@ const (
 	CanaryPhase1ABTestStrategy CanaryPhase1Strategy = "ABTestStrategy"
 )
 
+type PromQLMetric struct {
+	Metric          string
+	BudgetIsSeconds *int
+	PromQL          string
+}
+
+func (pm *PromQLMetric) GetPromQL(defaultBudget int) string {
+	if len(pm.PromQL) > 0 {
+		return pm.PromQL
+	}
+
+	budgetIsSeconds := pm.BudgetIsSeconds
+
+	if budgetIsSeconds == nil {
+		pm.BudgetIsSeconds = &defaultBudget
+	}
+
+	m := fmt.Sprintf("%s[%ds]", pm.Metric, *pm.BudgetIsSeconds)
+
+	return fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))", m, m)
+}
+
+// Deprecated: use PromQLMetric instead []string.
+func GetPromQLMetricFromSlices(slices []string) []*PromQLMetric {
+	result := make([]*PromQLMetric, len(slices))
+
+	for i, a := range slices {
+		result[i] = &PromQLMetric{
+			PromQL: a,
+		}
+	}
+
+	return result
+}
+
 type CanaryPhase1 struct {
 	Strategy                CanaryPhase1Strategy
 	MaxExecutionTimeSeconds *uint16
+	QualityGate             *CanaryQualityGate
 
 	// CanaryPhase1CanaryStrategy
 	CanaryPercentMin      *types.CanaryProviderPercent
@@ -252,7 +296,10 @@ func (cp1 *CanaryPhase1) GetMaxExecutionTime() time.Duration {
 }
 
 type CanaryPhase2 struct {
+	QualityGate             *CanaryQualityGate
 	MaxExecutionTimeSeconds *uint16
+	// wait while prometheus collect new metrics
+	WaitErrorBudgetPeriod bool
 }
 
 func (cp2 *CanaryPhase2) GetMaxExecutionTime() time.Duration {
@@ -260,12 +307,60 @@ func (cp2 *CanaryPhase2) GetMaxExecutionTime() time.Duration {
 }
 
 type CanaryQualityGate struct {
-	ErrorBudgetCount           int
-	ErrorBudgetPeriodInSeconds int
+	ErrorBudgetCount           *int
+	ErrorBudgetPeriodInSeconds *int
+	BadSamplesMetrics          []*PromQLMetric
+	TotalSamplesMetrics        []*PromQLMetric
+}
+
+func (q *CanaryQualityGate) Clone() *CanaryQualityGate {
+	result := CanaryQualityGate{}
+
+	// copy object to avoid side effects
+	m, _ := json.Marshal(q) //nolint:errchkjson
+	_ = json.Unmarshal(m, &result)
+
+	return &result
+}
+
+func (q *CanaryQualityGate) Merge(parent *CanaryQualityGate) *CanaryQualityGate {
+	parentCopy := parent.Clone()
+
+	if q == nil {
+		return parentCopy
+	}
+
+	result := q.Clone()
+
+	if result.BadSamplesMetrics == nil {
+		result.BadSamplesMetrics = parentCopy.BadSamplesMetrics
+	}
+
+	if result.TotalSamplesMetrics == nil {
+		result.TotalSamplesMetrics = parentCopy.TotalSamplesMetrics
+	}
+
+	if result.ErrorBudgetCount == nil {
+		result.ErrorBudgetCount = parentCopy.ErrorBudgetCount
+	}
+
+	if result.ErrorBudgetPeriodInSeconds == nil {
+		result.ErrorBudgetPeriodInSeconds = parentCopy.ErrorBudgetPeriodInSeconds
+	}
+
+	return result
 }
 
 func (q *CanaryQualityGate) GetErrorBudgetPeriod() time.Duration {
-	return time.Duration(q.ErrorBudgetPeriodInSeconds) * time.Second
+	return time.Duration(*q.ErrorBudgetPeriodInSeconds) * time.Second
+}
+
+func (q *CanaryQualityGate) HasPromQL() bool {
+	if q == nil || q.BadSamplesMetrics == nil || q.TotalSamplesMetrics == nil {
+		return false
+	}
+
+	return len(q.BadSamplesMetrics) > 0 && len(q.TotalSamplesMetrics) > 0
 }
 
 type Canary struct {
@@ -310,9 +405,11 @@ type Prometheus struct {
 	ReadyWaitStepSeconds        uint
 	ScrapeIntervalSeconds       uint
 	CreateConfigIntervalSeconds uint
+	ScrapeWaitSeconds           uint
 
 	// to reduce the number of metrics in prometheus, select only pods with these labels
 	// if empty, all pods will be selected in local prometheus
+	// labels can be templated with .Type struct
 	PodLabelSelector []string
 }
 
@@ -336,14 +433,19 @@ func (p *Prometheus) GetScrapeInterval() time.Duration {
 	return time.Duration(p.ScrapeIntervalSeconds) * time.Second
 }
 
+// Prometheus need some time to save scraped metrics, so we need to wait some time before we can get metrics.
+func (p *Prometheus) GetTotalScrapeInterval() time.Duration {
+	return time.Duration(p.ScrapeIntervalSeconds+p.ScrapeWaitSeconds) * time.Second
+}
+
 func (p *Prometheus) GetCreateConfigInterval() time.Duration {
 	return time.Duration(p.CreateConfigIntervalSeconds) * time.Second
 }
 
 type Type struct {
 	Canary                   *Canary
-	Version                  types.Version
-	CurrentVersion           types.Version
+	Version                  *types.Version
+	CurrentVersion           *types.Version
 	Name                     string
 	Namespace                string
 	Environment              string
@@ -351,11 +453,11 @@ type Type struct {
 	Services                 []*Service
 	ConfigMaps               []*ConfigMap
 	WebHooks                 []*WebHook
-	Pdb                      Pdb
+	Pdb                      *Pdb
 	PodCheckIntervalSeconds  int32
 	PodCheckAvailableTimes   int32
 	MaxProcessingTimeSeconds int32
-	Hpa                      Hpa
+	Hpa                      *Hpa
 	MinReplicas              int32
 	CreateService            bool
 	DeleteOrigins            bool
@@ -382,6 +484,23 @@ func (t *Type) CanRollBack() bool {
 // after that time rollback will not available.
 func (t *Type) SetCanNotRollback() {
 	t.canNotRollback = true
+}
+
+func (t *Type) GetPrometheusPodLabelSelector() []string {
+	result := make([]string, len(t.Prometheus.PodLabelSelector))
+
+	for i, value := range t.Prometheus.PodLabelSelector {
+		formatedValue, err := template.FormatValue(value, t)
+		if err != nil {
+			log.Errorf("error formatting prometheus pod label selector %s: %v", value, err)
+
+			result[i] = value
+		} else {
+			result[i] = formatedValue
+		}
+	}
+
+	return result
 }
 
 func (t *Type) String() string {
@@ -430,18 +549,36 @@ func Validate(ctx context.Context) error { //nolint:cyclop
 		}
 	}
 
-	if config.HasCanary() {
-		if err := config.Canary.Strategy.Validate(); err != nil {
-			return errors.Wrap(err, "invalid canary strategy")
-		}
+	if err := validateCanaryConfigs(ctx); err != nil {
+		return errors.Wrap(err, "invalid canary config")
+	}
 
-		if err := config.Canary.Phase1.Strategy.Validate(); err != nil {
-			return errors.Wrap(err, "invalid phase1 strategy")
-		}
+	return nil
+}
 
-		if err := config.Canary.InitServiceMesh(ctx); err != nil {
-			return errors.Wrap(err, "error initializing servicemesh")
-		}
+func validateCanaryConfigs(ctx context.Context) error {
+	if !config.HasCanary() {
+		return nil
+	}
+
+	if err := config.Canary.Strategy.Validate(); err != nil {
+		return errors.Wrap(err, "invalid canary strategy")
+	}
+
+	if err := config.Canary.Phase1.Strategy.Validate(); err != nil {
+		return errors.Wrap(err, "invalid phase1 strategy")
+	}
+
+	if err := config.Canary.InitServiceMesh(ctx); err != nil {
+		return errors.Wrap(err, "error initializing servicemesh")
+	}
+
+	if err := config.Canary.Phase1.CanaryPercentMin.Validate(); err != nil {
+		return errors.Wrap(err, "invalid phase1 CanaryPercentMin")
+	}
+
+	if err := config.Canary.Phase1.CanaryPercentMax.Validate(); err != nil {
+		return errors.Wrap(err, "invalid phase1 CanaryPercentMax")
 	}
 
 	return nil

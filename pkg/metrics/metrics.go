@@ -72,7 +72,7 @@ const (
 	Phase2 = 2
 )
 
-func SetTotal(phase int, value int) {
+func SetTotal(phase int8, value int) {
 	switch phase {
 	case Phase1:
 		QualityGatePhase1Samples.Set(float64(value))
@@ -81,7 +81,7 @@ func SetTotal(phase int, value int) {
 	}
 }
 
-func SetBad(phase int, value int) {
+func SetBad(phase int8, value int) {
 	switch phase {
 	case Phase1:
 		QualityGatePhase1BadSamples.Set(float64(value))

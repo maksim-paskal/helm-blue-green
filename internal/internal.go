@@ -301,7 +301,7 @@ func createNewVersions(ctx context.Context, values *config.Type) error {
 	return getProcessedErrors(&processErrors)
 }
 
-func updateServicesSelector(ctx context.Context, values *config.Type, version types.Version) error {
+func updateServicesSelector(ctx context.Context, values *config.Type, version *types.Version) error {
 	var processErrors sync.Map
 
 	var wg sync.WaitGroup
@@ -406,12 +406,17 @@ func turnOffCanary(ctx context.Context, values *config.Type) error {
 
 	switch values.Canary.Phase1.Strategy {
 	case config.CanaryPhase1CanaryStrategy:
-		err := values.Canary.GetServiceMesh().SetCanaryPercent(ctx, types.CanaryProviderPercentMin)
+		err := canary.SetServiceCanaryMode(ctx, values, false)
+		if err != nil {
+			return errors.Wrap(err, "error stopping canary service")
+		}
+
+		err = values.Canary.GetServiceMesh().SetCanaryPercent(ctx, types.CanaryProviderPercentMin)
 		if err != nil {
 			return errors.Wrap(err, "error setting canary percent")
 		}
 	case config.CanaryPhase1ABTestStrategy:
-		err := canary.SetServiceABTestMode(ctx, values, false)
+		err := canary.SetServiceCanaryMode(ctx, values, false)
 		if err != nil {
 			return errors.Wrap(err, "error stopping ab test")
 		}

@@ -34,6 +34,7 @@ const (
 	AppName                      = "envoy-control-plane"
 	annotationRouteClusterWeight = AppName + "/routes.cluster.weight."
 	annotationCanaryEnabled      = AppName + "/canary.enabled"
+	badSamplesPromQL             = ",envoy_response_code!~'[1-4]..'"
 )
 
 type Config struct {
@@ -64,7 +65,15 @@ type Cluster struct {
 	ClusterNameCanary string
 }
 
-func (e ServiceMesh) GetPromQL(promQLType types.CanaryProvidePromQLType, budgetSeconds int) (*types.CanaryProviderMetrics, error) { //nolint:lll,funlen
+func (c *Cluster) GetClusterNameCanary() string {
+	if len(c.ClusterNameCanary) == 0 {
+		return fmt.Sprintf("%s-canary", c.ClusterName)
+	}
+
+	return c.ClusterNameCanary
+}
+
+func (e ServiceMesh) GetPromQL(promQLType types.CanaryProviderPromQLType, budgetSeconds int) (*types.CanaryProviderMetrics, error) { //nolint:lll,funlen
 	result := types.CanaryProviderMetrics{
 		TotalSamplesQLs: make([]string, 0),
 		BadSamplesQLs:   make([]string, 0),
@@ -72,63 +81,66 @@ func (e ServiceMesh) GetPromQL(promQLType types.CanaryProvidePromQLType, budgetS
 
 	for _, cluster := range e.configProvider.Clusters {
 		switch promQLType {
-		case types.CanaryProvideProQLTypeCanary:
-			labels := fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s"}[%ds]`,
-				cluster.ClusterNameCanary,
+		case types.CanaryProviderPromQLTypeCanary:
+			labels := fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'%s}[%ds]",
+				cluster.GetClusterNameCanary(),
+				badSamplesPromQL,
 				budgetSeconds,
 			)
 
-			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
 
-			labels = fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s",envoy_response_code!~"[1-4].."}[%ds]`,
-				cluster.ClusterNameCanary,
+			labels = fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'}[%ds]",
+				cluster.GetClusterNameCanary(),
 				budgetSeconds,
 			)
 
-			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
-		case types.CanaryProvideProQLTypeABTest:
-			labels := fmt.Sprintf(`envoy_cluster_canary_upstream_rq{envoy_cluster_name="%s",envoy_response_code!~"[1-4].."}[%ds]`, //nolint:lll
+		case types.CanaryProviderPromQLTypeABTest:
+			labels := fmt.Sprintf("envoy_cluster_canary_upstream_rq{envoy_cluster_name='%s'%s}[%ds]",
+				cluster.ClusterName,
+				badSamplesPromQL,
+				budgetSeconds,
+			)
+
+			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
+				labels,
+				labels,
+			))
+
+			labels = fmt.Sprintf("envoy_cluster_canary_upstream_rq{envoy_cluster_name='%s'}[%ds]",
 				cluster.ClusterName,
 				budgetSeconds,
 			)
 
-			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
+				labels,
+				labels,
+			))
+		case types.CanaryProviderPromQLTypeFull:
+			labels := fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'%s}[%ds]",
+				cluster.ClusterName,
+				badSamplesPromQL,
+				budgetSeconds,
+			)
+
+			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
 
-			labels = fmt.Sprintf(`envoy_cluster_canary_upstream_rq{envoy_cluster_name="%s"}[%ds]`,
+			labels = fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'}[%ds]",
 				cluster.ClusterName,
 				budgetSeconds,
 			)
 
-			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
-				labels,
-				labels,
-			))
-		case types.CanaryProvideProQLTypeFull:
-			labels := fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s",envoy_response_code!~"[1-4].."}[%ds]`, //nolint:lll
-				cluster.ClusterName,
-				budgetSeconds,
-			)
-
-			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
-				labels,
-				labels,
-			))
-
-			labels = fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s"}[%ds]`,
-				cluster.ClusterName,
-				budgetSeconds,
-			)
-
-			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
@@ -148,7 +160,7 @@ func (e ServiceMesh) SetCanaryPercent(ctx context.Context, percent types.CanaryP
 	newAnnotation := make(map[string]string)
 
 	for _, cluster := range e.configProvider.Clusters {
-		newAnnotation[e.configProvider.GetAnnotation(cluster.ClusterNameCanary)] = fmt.Sprintf("%d", percent)                          //nolint:lll
+		newAnnotation[e.configProvider.GetAnnotation(cluster.GetClusterNameCanary())] = fmt.Sprintf("%d", percent)                     //nolint:lll
 		newAnnotation[e.configProvider.GetAnnotation(cluster.ClusterName)] = fmt.Sprintf("%d", types.CanaryProviderPercentMax-percent) //nolint:lll
 	}
 
@@ -275,7 +287,7 @@ func (e *ServiceMesh) updateEndpointAnnotation(ctx context.Context, name string,
 	return nil
 }
 
-func (e *ServiceMesh) SetServiceABTestMode(ctx context.Context, service string, isStart bool) error {
+func (e *ServiceMesh) SetServiceCanaryMode(ctx context.Context, service string, isStart bool) error {
 	newAnnotation := map[string]string{
 		annotationCanaryEnabled: strconv.FormatBool(isStart),
 	}
@@ -286,4 +298,10 @@ func (e *ServiceMesh) SetServiceABTestMode(ctx context.Context, service string, 
 	}
 
 	return nil
+}
+
+func (e *ServiceMesh) SetServiceABTestMode(ctx context.Context, service string, isStart bool) error {
+	err := e.SetServiceCanaryMode(ctx, service, isStart)
+
+	return errors.Wrap(err, "failed to set service abtest mode")
 }
