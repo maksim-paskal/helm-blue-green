@@ -42,7 +42,7 @@ const (
 	labelVersion   = labelNamespace + "/version"
 )
 
-func labels(version types.Version, labels map[string]string) {
+func labels(version *types.Version, labels map[string]string) {
 	// remove all old labels from previous versions
 	for k := range labels {
 		if strings.HasPrefix(k, labelNamespace+"/") {
@@ -219,7 +219,7 @@ func WaitForPodsToBeReady(ctx context.Context, values *config.Type) error { //no
 	return nil
 }
 
-func UpdateServiceSelector(ctx context.Context, serviceName string, values *config.Type, version types.Version) error {
+func UpdateServiceSelector(ctx context.Context, serviceName string, values *config.Type, version *types.Version) error {
 	err := wait.ExponentialBackoff(retry.DefaultBackoff, func() (bool, error) {
 		service, err := kube().CoreV1().Services(values.Namespace).Get(ctx, serviceName, metav1.GetOptions{})
 		if err != nil {
@@ -332,7 +332,7 @@ func ScaleDeployment(ctx context.Context, item *config.Deployment, replicas int3
 	return nil
 }
 
-func GetCurrentVersion(ctx context.Context, values *config.Type) (types.Version, error) {
+func GetCurrentVersion(ctx context.Context, values *config.Type) (*types.Version, error) {
 	version := types.Version{
 		Scope: values.Version.Scope,
 		Value: "",
@@ -341,17 +341,17 @@ func GetCurrentVersion(ctx context.Context, values *config.Type) (types.Version,
 	// use first service to get current version of traffic
 	service, err := kube().CoreV1().Services(values.Namespace).Get(ctx, values.Services[0].Name, metav1.GetOptions{})
 	if err != nil {
-		return version, errors.Wrap(err, "error getting service")
+		return &version, errors.Wrap(err, "error getting service")
 	}
 
 	serviceVersion, ok := service.Spec.Selector[values.Version.Key()]
 	if !ok {
-		return version, nil
+		return &version, nil
 	}
 
 	version.Value = serviceVersion
 
-	return version, nil
+	return &version, nil
 }
 
 func DeleteOrigins(ctx context.Context, values *config.Type) error { //nolint:cyclop

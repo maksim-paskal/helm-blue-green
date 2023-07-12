@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func createHPA(ctx context.Context, deploymentName string, hpaConfig config.Hpa, values *config.Type) error {
+func createHPA(ctx context.Context, deploymentName string, hpaConfig *config.Hpa, values *config.Type) error {
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   deploymentName,

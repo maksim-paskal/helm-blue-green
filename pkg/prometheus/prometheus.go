@@ -134,6 +134,12 @@ func makePrometheusAction(ctx context.Context, action prometheusManagmentAction)
 func GetMetrics(ctx context.Context, query string) (model.Vector, error) {
 	log.Debugf("query: %s", query)
 
+	if !config.Get().Prometheus.Enabled() {
+		log.Warn("prometheus not enabled, skip getting metric")
+
+		return nil, nil
+	}
+
 	v1api := prometheusv1.NewAPI(promClient)
 
 	result, warnings, err := v1api.Query(ctx, query, time.Now())
@@ -219,7 +225,7 @@ func createPrometheusConfig(ctx context.Context) error { //nolint:funlen,cyclop
 	}
 
 	// get user defined pod targets
-	for _, podLabelSelector := range config.Get().Prometheus.PodLabelSelector {
+	for _, podLabelSelector := range config.Get().GetPrometheusPodLabelSelector() {
 		podTargets, err := getPodTargets(ctx, podLabelSelector)
 		if err != nil {
 			return errors.Wrap(err, "failed to get pod targets")

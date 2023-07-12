@@ -20,9 +20,9 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
+	"github.com/maksim-paskal/helm-blue-green/pkg/template"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -114,19 +114,12 @@ func (e *Event) GetJSON() string {
 }
 
 func (e *Event) FormatValue(value string) (string, error) {
-	tmpl, err := template.New("webhook").Parse(value)
-	if err != nil {
-		return "", errors.Wrap(err, "error parsing template")
-	}
-
-	var tpl bytes.Buffer
-
-	err = tmpl.Execute(&tpl, e)
+	result, err := template.FormatValue(value, e)
 	if err != nil {
 		return "", errors.Wrap(err, "error execute template")
 	}
 
-	return tpl.String(), err
+	return result, nil
 }
 
 const defaultMethod = http.MethodGet
