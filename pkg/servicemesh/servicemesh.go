@@ -13,8 +13,6 @@ limitations under the License.
 package servicemesh
 
 import (
-	"fmt"
-
 	"github.com/maksim-paskal/helm-blue-green/pkg/servicemesh/providers/envoycontrolplane"
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 	"github.com/pkg/errors"
@@ -30,8 +28,8 @@ func NewServiceMesh(config types.ServiceMeshConfig) (types.ServiceMesh, error) {
 	case serviceMeshEnvoyControlPlane:
 		servicemesh, err := envoycontrolplane.NewServiceMesh(config)
 
-		return servicemesh, errors.Wrapf(err, "error creating provider %s", config.ServiceMesh) //nolint:go
+		return servicemesh, errors.Wrapf(err, "error creating provider %s", config.ServiceMesh)
 	default:
-		return nil, fmt.Errorf("provider %s not found", config.ServiceMesh) //nolint:goerr113
+		return nil, errors.Errorf("provider %s not found", config.ServiceMesh)
 	}
 }

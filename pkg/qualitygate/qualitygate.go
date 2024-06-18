@@ -14,7 +14,6 @@ package qualitygate
 
 import (
 	"context"
-	"time"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
 	"github.com/maksim-paskal/helm-blue-green/pkg/metrics"
@@ -25,9 +24,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// additional time for metrics wait.
-const analyseMetricsWait = 5 * time.Second
-
 type AnalyseType string
 
 const (
@@ -37,11 +33,11 @@ const (
 )
 
 const (
-	Phase1 int = 1
-	Phase2 int = 2
+	Phase1 int8 = 1
+	Phase2 int8 = 2
 )
 
-func (a AnalyseType) GetPhaseNumber() int {
+func (a AnalyseType) GetPhaseNumber() int8 {
 	if a.IsPhase1() {
 		return Phase1
 	}
@@ -63,13 +59,7 @@ func AnalyseTraffic(ctx context.Context, values *config.Type, analyseType Analys
 		"phase": analyseType.GetPhaseNumber(),
 	})
 
-	if !values.Prometheus.Enabled() {
-		log.Warn("prometheus not enabled, skip analyse traffic")
-
-		return nil
-	}
-
-	prometheusWaitTime := config.Get().Prometheus.GetScrapeInterval() + analyseMetricsWait
+	prometheusWaitTime := config.Get().Prometheus.GetTotalScrapeInterval()
 
 	log.Infof("Waiting %s for prometheus gather metrics...", prometheusWaitTime.String())
 	utils.SleepWithContext(ctx, prometheusWaitTime)
@@ -77,24 +67,26 @@ func AnalyseTraffic(ctx context.Context, values *config.Type, analyseType Analys
 	totalSamples := 0
 	totalErrors := 0
 
-	var promQLType types.CanaryProvidePromQLType
-
-	switch analyseType {
-	case Phase1Canary:
-		promQLType = types.CanaryProvideProQLTypeCanary
-	case Phase1ABTest:
-		promQLType = types.CanaryProvideProQLTypeABTest
-	case Phase2Full:
-		promQLType = types.CanaryProvideProQLTypeFull
+	qualityGateConfig := values.Canary.QualityGate
+	if analyseType.IsPhase1() {
+		qualityGateConfig = values.Canary.Phase1.QualityGate.Merge(values.Canary.QualityGate)
 	}
 
-	getPromQL, err := values.Canary.GetServiceMesh().GetPromQL(promQLType, values.Canary.QualityGate.ErrorBudgetPeriodInSeconds) //nolint:lll
-	if err != nil {
-		return errors.Wrap(err, "failed to get promQL")
+	if analyseType.IsPhase2() {
+		qualityGateConfig = values.Canary.Phase2.QualityGate.Merge(values.Canary.QualityGate)
 	}
 
-	for _, promQL := range getPromQL.TotalSamplesQLs {
-		result, err := prometheus.GetMetrics(ctx, promQL)
+	if !qualityGateConfig.HasPromQL() {
+		canaryQualityGateServiceMesh, err := getPromQLFromServiceMeshProvider(values, qualityGateConfig, analyseType)
+		if err != nil {
+			return errors.Wrap(err, "failed to get promQL from service mesh provider")
+		}
+
+		qualityGateConfig = canaryQualityGateServiceMesh
+	}
+
+	for _, promMetric := range qualityGateConfig.TotalSamplesMetrics {
+		result, err := prometheus.GetMetrics(ctx, promMetric.GetPromQL())
 		if err != nil {
 			return errors.Wrap(err, "failed to get metrics")
 		}
@@ -104,8 +96,8 @@ func AnalyseTraffic(ctx context.Context, values *config.Type, analyseType Analys
 		}
 	}
 
-	for _, promQL := range getPromQL.BadSamplesQLs {
-		result, err := prometheus.GetMetrics(ctx, promQL)
+	for _, promMetric := range qualityGateConfig.BadSamplesMetrics {
+		result, err := prometheus.GetMetrics(ctx, promMetric.GetPromQL())
 		if err != nil {
 			return errors.Wrap(err, "failed to get metrics")
 		}
@@ -119,18 +111,55 @@ func AnalyseTraffic(ctx context.Context, values *config.Type, analyseType Analys
 	metrics.SetTotal(analyseType.GetPhaseNumber(), totalSamples)
 	metrics.SetBad(analyseType.GetPhaseNumber(), totalErrors)
 
-	if totalErrors > values.Canary.QualityGate.ErrorBudgetCount {
+	if totalErrors > *qualityGateConfig.ErrorBudgetCount {
 		log.Errorf("Traffic is bad, errors=%d,samples=%d,allowed=%d errors over %s",
 			totalErrors,
 			totalSamples,
-			values.Canary.QualityGate.ErrorBudgetCount,
+			*qualityGateConfig.ErrorBudgetCount,
 			values.Canary.QualityGate.GetErrorBudgetPeriod().String(),
 		)
 
 		return types.ErrNewReleaseBadQuality
 	}
 
-	log.Infof("errors=%d,samples=%d,allowed=%d, Traffic is ok", totalErrors, totalSamples, values.Canary.QualityGate.ErrorBudgetCount) //nolint:lll
+	log.Infof("errors=%d,samples=%d,allowed=%d, Traffic is ok",
+		totalErrors,
+		totalSamples,
+		*qualityGateConfig.ErrorBudgetCount,
+	)
 
 	return nil
+}
+
+// Deprecated: use phase CanaryPhaseQualityGate.
+func getPromQLFromServiceMeshProvider(values *config.Type, qualityGateConfig *config.CanaryQualityGate, analyseType AnalyseType) (*config.CanaryQualityGate, error) { //nolint:lll
+	log.Warn("getPromQLFromServiceMeshProvider is deprecated, use phase CanaryPhaseQualityGate")
+
+	var promQLType types.CanaryProviderPromQLType
+
+	switch analyseType {
+	case Phase1Canary:
+		promQLType = types.CanaryProviderPromQLTypeCanary
+	case Phase1ABTest:
+		promQLType = types.CanaryProviderPromQLTypeABTest
+	case Phase2Full:
+		promQLType = types.CanaryProviderPromQLTypeFull
+	}
+
+	getPromQL, err := values.Canary.GetServiceMesh().GetPromQL(
+		promQLType,
+		*qualityGateConfig.ErrorBudgetPeriodInSeconds,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get promQL")
+	}
+
+	result := &config.CanaryQualityGate{
+		ErrorBudgetCount:           qualityGateConfig.ErrorBudgetCount,
+		ErrorBudgetPeriodInSeconds: qualityGateConfig.ErrorBudgetPeriodInSeconds,
+		TotalSamplesMetrics:        config.GetPromQLMetricFromSlices(getPromQL.TotalSamplesQLs),
+		BadSamplesMetrics:          config.GetPromQLMetricFromSlices(getPromQL.BadSamplesQLs),
+	}
+
+	return result, nil
 }

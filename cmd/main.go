@@ -28,12 +28,13 @@ import (
 )
 
 var (
-	logLevel = flag.String("log.level", "info", "Log level")
-	logJSON  = flag.Bool("log.json", true, "Logs as JSON")
-	version  = flag.Bool("version", false, "Print version and exit")
+	logLevel   = flag.String("log.level", "info", "Log level")
+	logJSON    = flag.Bool("log.json", false, "Logs as JSON")
+	version    = flag.Bool("version", false, "Print version and exit")
+	showConfig = flag.Bool("showConfig", false, "Print config and exit")
 )
 
-func main() {
+func main() { //nolint:cyclop
 	flag.Parse()
 
 	if *version {
@@ -49,11 +50,9 @@ func main() {
 	log.SetLevel(level)
 	log.SetReportCaller(true)
 
-	if *logJSON {
+	if _, ok := os.LookupEnv("KUBERNETES_SERVICE_HOST"); ok || *logJSON {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
-
-	log.Infof("Starting helm-blue-green %s...", config.GetVersion())
 
 	// get background context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -70,6 +69,23 @@ func main() {
 			cancel()
 		}
 	}()
+
+	if err := config.Load(ctx); err != nil {
+		log.WithError(err).Fatal()
+	}
+
+	if *showConfig {
+		fmt.Println(config.Get().String()) //nolint:forbidigo
+		os.Exit(0)                         //nolint:gocritic
+	}
+
+	log.Infof("Starting helm-blue-green %s...", config.GetVersion())
+
+	log.Infof("Using config:\n%s", config.Get().String())
+
+	if err := config.Validate(ctx); err != nil {
+		log.WithError(err).Fatal()
+	}
 
 	if err := internal.Start(ctx); err != nil {
 		// do not retry process if new release was failed by quality check

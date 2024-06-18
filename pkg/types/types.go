@@ -14,8 +14,10 @@ package types
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/pkg/errors"
 )
 
 type Version struct {
@@ -39,7 +41,7 @@ func (v Version) String() string {
 }
 
 func (v Version) Key() string {
-	return fmt.Sprintf("%s/version", v.Scope)
+	return v.Scope + "/version"
 }
 
 type CanaryProviderPercent uint8
@@ -49,15 +51,47 @@ const (
 	CanaryProviderPercentMin CanaryProviderPercent = 0
 )
 
+func (c CanaryProviderPercent) Validate() error {
+	if c >= CanaryProviderPercentMin && c <= CanaryProviderPercentMax {
+		return nil
+	}
+
+	return errors.Errorf("invalid value (%d) valid %d-%d", c, CanaryProviderPercentMin, CanaryProviderPercentMax) //nolint:lll
+}
+
 var ErrNewReleaseBadQuality = errors.New("new release failed by quality gate")
 
-type CanaryProvidePromQLType string
+type CanaryProviderPromQLType string
 
 const (
-	CanaryProvideProQLTypeCanary CanaryProvidePromQLType = "CanaryProvideProQLTypeCanary"
-	CanaryProvideProQLTypeABTest CanaryProvidePromQLType = "CanaryProvideProQLTypeABTest"
-	CanaryProvideProQLTypeFull   CanaryProvidePromQLType = "CanaryProvideProQLTypeFull"
+	CanaryProviderPromQLTypeCanary CanaryProviderPromQLType = "CanaryProviderPromQLTypeCanary"
+	CanaryProviderPromQLTypeABTest CanaryProviderPromQLType = "CanaryProviderPromQLTypeABTest"
+	CanaryProviderPromQLTypeFull   CanaryProviderPromQLType = "CanaryProviderPromQLTypeFull"
 )
+
+func (c CanaryProviderPromQLType) HasValue() bool {
+	return len(c) > 0
+}
+
+func (c CanaryProviderPromQLType) Validate() error {
+	if !c.HasValue() {
+		return nil
+	}
+
+	validValues := []string{
+		string(CanaryProviderPromQLTypeCanary),
+		string(CanaryProviderPromQLTypeABTest),
+		string(CanaryProviderPromQLTypeFull),
+	}
+
+	for _, v := range validValues {
+		if c == CanaryProviderPromQLType(v) {
+			return nil
+		}
+	}
+
+	return errors.Errorf("invalid value (%s) valid %s", string(c), strings.Join(validValues, ","))
+}
 
 type CanaryProviderMetrics struct {
 	TotalSamplesQLs []string
@@ -66,11 +100,14 @@ type CanaryProviderMetrics struct {
 
 type ServiceMesh interface {
 	// set canary percent
-	SetCanaryPercent(context.Context, CanaryProviderPercent) error
+	SetCanaryPercent(ctx context.Context, percent CanaryProviderPercent) error
+	// set service to canary mode
+	SetServiceCanaryMode(ctx context.Context, service string, isStart bool) error
 	// set service to ABTest mode
-	SetServiceABTestMode(context.Context, string, bool) error
+	SetServiceABTestMode(ctx context.Context, service string, isStart bool) error
+	// Deprecated: use CanaryPhaseQualityGate
 	// get prometheus expression for analyse bad status
-	GetPromQL(CanaryProvidePromQLType, int) (*CanaryProviderMetrics, error)
+	GetPromQL(promQLType CanaryProviderPromQLType, budgetSeconds int) (*CanaryProviderMetrics, error)
 }
 
 type ServiceMeshConfig struct {

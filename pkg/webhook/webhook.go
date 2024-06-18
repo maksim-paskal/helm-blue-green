@@ -20,9 +20,9 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
+	"github.com/maksim-paskal/helm-blue-green/pkg/template"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -49,6 +49,7 @@ type Event struct {
 	OldVersion  string
 	Duration    string
 	Metrics     map[string]string
+	Metadata    map[string]string
 }
 
 // return query string with not empty elements.
@@ -71,6 +72,14 @@ func (e *Event) GetQueryString() string {
 		}
 	}
 
+	if e.Metadata != nil {
+		for k, v := range e.Metadata {
+			if len(v) > 0 {
+				q = append(q, "event.Metadata."+k+"="+url.QueryEscape(v))
+			}
+		}
+	}
+
 	sort.Strings(q)
 
 	queryString := make([]string, 0)
@@ -86,6 +95,41 @@ func (e *Event) GetQueryString() string {
 	return strings.Join(queryString, "&")
 }
 
+func (e *Event) IsOK() bool {
+	return e.Type == EventTypeSuccess || e.Type == EventTypeAlreadyDeployed
+}
+
+func (e *Event) GetSlackPayload() string {
+	icon := ":no_entry:"
+
+	if e.IsOK() {
+		icon = ":white_check_mark:"
+	}
+
+	type slackMessage struct {
+		Text string `json:"text"`
+	}
+
+	messageText := e.Environment + " " + e.Namespace + "/" + e.Name
+	messageText = strings.ReplaceAll(messageText, "  ", "")
+	messageText = strings.ReplaceAll(messageText, " /", " ")
+
+	message := slackMessage{
+		Text: strings.TrimSpace(icon + " " + messageText),
+	}
+
+	message.Text += "\n```"
+	message.Text += strings.ReplaceAll(e.GetQueryString(), "&", "\n")
+	message.Text += "```\n"
+
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return err.Error()
+	}
+
+	return string(payload)
+}
+
 const (
 	okEmoji    = "\u2705"
 	errorEmoji = "\u274C"
@@ -94,7 +138,7 @@ const (
 func (e *Event) GetQueryStringEmoji() string {
 	newEvent := *e
 
-	if newEvent.Type == EventTypeSuccess || newEvent.Type == EventTypeAlreadyDeployed {
+	if newEvent.IsOK() {
 		newEvent.Type += okEmoji
 	} else {
 		newEvent.Type += errorEmoji
@@ -114,19 +158,12 @@ func (e *Event) GetJSON() string {
 }
 
 func (e *Event) FormatValue(value string) (string, error) {
-	tmpl, err := template.New("webhook").Parse(value)
-	if err != nil {
-		return "", errors.Wrap(err, "error parsing template")
-	}
-
-	var tpl bytes.Buffer
-
-	err = tmpl.Execute(&tpl, e)
+	result, err := template.FormatValue(value, e)
 	if err != nil {
 		return "", errors.Wrap(err, "error execute template")
 	}
 
-	return tpl.String(), err
+	return result, nil
 }
 
 const defaultMethod = http.MethodGet
@@ -151,6 +188,8 @@ func Execute(ctx context.Context, event Event, values *config.Type) error {
 }
 
 func Send(ctx context.Context, event Event, webhook *config.WebHook) error {
+	requestMethod := defaultMethod
+
 	var requestString []byte
 
 	if len(webhook.Body) > 0 {
@@ -159,10 +198,9 @@ func Send(ctx context.Context, event Event, webhook *config.WebHook) error {
 			return errors.Wrap(err, "error formatting webhook body")
 		}
 
+		requestMethod = http.MethodPost
 		requestString = []byte(webhookBody)
 	}
-
-	requestMethod := defaultMethod
 
 	if len(webhook.Method) > 0 {
 		requestMethod = webhook.Method
@@ -188,6 +226,8 @@ func Send(ctx context.Context, event Event, webhook *config.WebHook) error {
 
 		request.Header.Set(key, headerValue)
 	}
+
+	log.Debugf("Making request: %+v", request)
 
 	response, err := httpClient.Do(request)
 	if err != nil {

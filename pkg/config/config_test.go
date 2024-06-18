@@ -18,9 +18,10 @@ import (
 	"testing"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
+	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 )
 
-func TestConfig(t *testing.T) { //nolint:paralleltest
+func TestConfig(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv("NAMESPACE", "default")
@@ -28,6 +29,7 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 	t.Setenv("MIN_REPLICAS", "1")
 	t.Setenv("ENVIRONMENT", "testEnv")
 	t.Setenv("MIN_REPLICAS_1", "22")
+	t.Setenv("MAX_REPLICAS_1", "23")
 	t.Setenv("MIN_REPLICAS_1111", "0")
 
 	if err := flag.Set("config", "testdata/test_config.yaml"); err != nil {
@@ -35,6 +37,10 @@ func TestConfig(t *testing.T) { //nolint:paralleltest
 	}
 
 	if err := config.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.Validate(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,5 +88,112 @@ func TestHasPhases(t *testing.T) {
 
 	if !(!testConfig.Canary.Strategy.HasPhase1() && testConfig.Canary.Strategy.HasPhase2()) {
 		t.Fatal("CanaryStrategyOnlyPhase2 problems")
+	}
+}
+
+func TestGetPrometheusPodLabelSelector(t *testing.T) {
+	t.Parallel()
+
+	testConfig := config.Type{
+		Version: &types.Version{
+			Value: "test",
+		},
+		Prometheus: &config.Prometheus{
+			PodLabelSelector: []string{
+				"app.kubernetes.io/name=test1",
+				"app.kubernetes.io/name=test2,test={{ .Version.Value }}",
+				"app.kubernetes.io/name=test3,fakeTest={{ .FakeValue }}",
+			},
+		},
+	}
+
+	labels := testConfig.GetPrometheusPodLabelSelector()
+
+	if len(labels) != len(testConfig.Prometheus.PodLabelSelector) {
+		t.Fatal("result must have same length as testConfig.Prometheus.PodLabelSelector")
+	}
+
+	const fatalText = "want %s, got %s"
+
+	if want := "app.kubernetes.io/name=test1"; want != labels[0] {
+		t.Fatalf(fatalText, want, labels[0])
+	}
+
+	if want := "app.kubernetes.io/name=test2,test=test"; want != labels[1] {
+		t.Fatalf(fatalText, want, labels[1])
+	}
+
+	if want := "app.kubernetes.io/name=test3,fakeTest={{ .FakeValue }}"; want != labels[2] {
+		t.Fatalf(fatalText, want, labels[2])
+	}
+}
+
+func pnt[T any](v T) *T {
+	return &v
+}
+
+func TestPromMetric(t *testing.T) {
+	t.Parallel()
+
+	cases := make(map[config.PromQLMetric]string)
+
+	cases[config.PromQLMetric{
+		Metric:          "test1",
+		BudgetInSeconds: pnt(2),
+	}] = "sum(max_over_time(test1[2s])-min_over_time(test1[2s]))"
+
+	cases[config.PromQLMetric{
+		Metric:          "test2",
+		BudgetInSeconds: pnt(1),
+	}] = "sum(max_over_time(test2[1s])-min_over_time(test2[1s]))"
+
+	cases[config.PromQLMetric{
+		PromQL: "test2[1s]",
+	}] = "test2[1s]"
+
+	for k, v := range cases {
+		if got := k.GetPromQL(); got != v {
+			t.Fatalf("want %s, got %s", v, got)
+		}
+	}
+}
+
+func TestCanaryQualityGate(t *testing.T) {
+	t.Parallel()
+
+	defaultErrorBudgetCount := 1
+	defaultErrorBudgetPeriodInSeconds := 2
+	defaultPhase2ErrorBudgetCount := 3
+
+	primary := config.CanaryQualityGate{
+		ErrorBudgetCount:           &defaultErrorBudgetCount,
+		ErrorBudgetPeriodInSeconds: &defaultErrorBudgetPeriodInSeconds,
+	}
+	phase1 := config.CanaryQualityGate{}
+	phase2 := config.CanaryQualityGate{
+		ErrorBudgetCount: &defaultPhase2ErrorBudgetCount,
+	}
+
+	phase1Merged := phase1.Merge(&primary)
+	phase2Merged := phase2.Merge(&primary)
+
+	if got := *phase1Merged.ErrorBudgetCount; got != defaultErrorBudgetCount {
+		t.Fatalf("want %d, got %d", defaultErrorBudgetCount, got)
+	}
+
+	if got := *phase2Merged.ErrorBudgetCount; got != defaultPhase2ErrorBudgetCount {
+		t.Fatalf("want %d, got %d", defaultPhase2ErrorBudgetCount, got)
+	}
+
+	if got := *phase2.ErrorBudgetCount; got != defaultPhase2ErrorBudgetCount {
+		t.Fatalf("want %d, got %d", defaultPhase2ErrorBudgetCount, got)
+	}
+
+	if phase1.ErrorBudgetCount != nil {
+		t.Fatal("phase1.ErrorBudgetCount must be nil")
+	}
+
+	if got := *primary.ErrorBudgetCount; got != defaultErrorBudgetCount {
+		t.Fatalf("want %d, got %d", defaultErrorBudgetCount, got)
 	}
 }

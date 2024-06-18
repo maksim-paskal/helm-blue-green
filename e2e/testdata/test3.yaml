@@ -1,8 +1,13 @@
 # test dublicate second release
 version:
-  value: v2
+  value: v3
 
 minReplicas: 2
+
+hpa:
+  minReplicas: 2
+  maxReplicas: 10
+  averageUtilization: 50
 
 deployments:
 - name: http-echo1
@@ -18,3 +23,27 @@ configMaps:
 - name: http-echo1
 - name: http-echo2
 - name: http-echo3
+
+canary:
+  enabled: true
+  phase1:
+    strategy: CanaryStrategy
+    maxExecutionTimeSeconds: 10
+    canaryPercentMin: 5
+    canaryPercentStep: 0
+  phase2:
+    maxExecutionTimeSeconds: 10
+    waitErrorBudgetPeriod: false
+  serviceMeshConfig: |-
+    configMaps:
+    - http-echo1
+    - http-echo2
+    - http-echo3
+    clusters:
+    - clusterName: http-echo1
+      clusterNameCanary: http-echo1-canary
+    - clusterName: http-echo2
+      clusterNameCanary: http-echo2-canary
+  services:
+  - name: http-echo1-canary
+  - name: http-echo2-canary

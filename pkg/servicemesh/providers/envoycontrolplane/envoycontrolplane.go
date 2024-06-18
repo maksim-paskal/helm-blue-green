@@ -26,7 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 )
 
@@ -34,6 +33,7 @@ const (
 	AppName                      = "envoy-control-plane"
 	annotationRouteClusterWeight = AppName + "/routes.cluster.weight."
 	annotationCanaryEnabled      = AppName + "/canary.enabled"
+	badSamplesPromQL             = ",envoy_response_code!~'[1-4]..'"
 )
 
 type Config struct {
@@ -64,7 +64,15 @@ type Cluster struct {
 	ClusterNameCanary string
 }
 
-func (e ServiceMesh) GetPromQL(promQLType types.CanaryProvidePromQLType, budgetSeconds int) (*types.CanaryProviderMetrics, error) { //nolint:lll,funlen
+func (c *Cluster) GetClusterNameCanary() string {
+	if len(c.ClusterNameCanary) == 0 {
+		return c.ClusterName + "-canary"
+	}
+
+	return c.ClusterNameCanary
+}
+
+func (e ServiceMesh) GetPromQL(promQLType types.CanaryProviderPromQLType, budgetSeconds int) (*types.CanaryProviderMetrics, error) { //nolint:lll,funlen
 	result := types.CanaryProviderMetrics{
 		TotalSamplesQLs: make([]string, 0),
 		BadSamplesQLs:   make([]string, 0),
@@ -72,63 +80,66 @@ func (e ServiceMesh) GetPromQL(promQLType types.CanaryProvidePromQLType, budgetS
 
 	for _, cluster := range e.configProvider.Clusters {
 		switch promQLType {
-		case types.CanaryProvideProQLTypeCanary:
-			labels := fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s"}[%ds]`,
-				cluster.ClusterNameCanary,
+		case types.CanaryProviderPromQLTypeCanary:
+			labels := fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'%s}[%ds]",
+				cluster.GetClusterNameCanary(),
+				badSamplesPromQL,
 				budgetSeconds,
 			)
 
-			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
 
-			labels = fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s",envoy_response_code!~"[1-4].."}[%ds]`,
-				cluster.ClusterNameCanary,
+			labels = fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'}[%ds]",
+				cluster.GetClusterNameCanary(),
 				budgetSeconds,
 			)
 
-			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
-		case types.CanaryProvideProQLTypeABTest:
-			labels := fmt.Sprintf(`envoy_cluster_canary_upstream_rq{envoy_cluster_name="%s",envoy_response_code!~"[1-4].."}[%ds]`, //nolint:lll
+		case types.CanaryProviderPromQLTypeABTest:
+			labels := fmt.Sprintf("envoy_cluster_canary_upstream_rq{envoy_cluster_name='%s'%s}[%ds]",
+				cluster.ClusterName,
+				badSamplesPromQL,
+				budgetSeconds,
+			)
+
+			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
+				labels,
+				labels,
+			))
+
+			labels = fmt.Sprintf("envoy_cluster_canary_upstream_rq{envoy_cluster_name='%s'}[%ds]",
 				cluster.ClusterName,
 				budgetSeconds,
 			)
 
-			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
+				labels,
+				labels,
+			))
+		case types.CanaryProviderPromQLTypeFull:
+			labels := fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'%s}[%ds]",
+				cluster.ClusterName,
+				badSamplesPromQL,
+				budgetSeconds,
+			)
+
+			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
 
-			labels = fmt.Sprintf(`envoy_cluster_canary_upstream_rq{envoy_cluster_name="%s"}[%ds]`,
+			labels = fmt.Sprintf("envoy_cluster_upstream_rq{envoy_cluster_name='%s'}[%ds]",
 				cluster.ClusterName,
 				budgetSeconds,
 			)
 
-			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
-				labels,
-				labels,
-			))
-		case types.CanaryProvideProQLTypeFull:
-			labels := fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s",envoy_response_code!~"[1-4].."}[%ds]`, //nolint:lll
-				cluster.ClusterName,
-				budgetSeconds,
-			)
-
-			result.BadSamplesQLs = append(result.BadSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
-				labels,
-				labels,
-			))
-
-			labels = fmt.Sprintf(`envoy_cluster_upstream_rq{envoy_cluster_name="%s"}[%ds]`,
-				cluster.ClusterName,
-				budgetSeconds,
-			)
-
-			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf(`sum(max_over_time(%s)-min_over_time(%s))`,
+			result.TotalSamplesQLs = append(result.TotalSamplesQLs, fmt.Sprintf("sum(max_over_time(%s)-min_over_time(%s))",
 				labels,
 				labels,
 			))
@@ -141,14 +152,13 @@ func (e ServiceMesh) GetPromQL(promQLType types.CanaryProvidePromQLType, budgetS
 type ServiceMesh struct {
 	config         types.ServiceMeshConfig
 	configProvider Config
-	client         *kubernetes.Clientset
 }
 
 func (e ServiceMesh) SetCanaryPercent(ctx context.Context, percent types.CanaryProviderPercent) error {
 	newAnnotation := make(map[string]string)
 
 	for _, cluster := range e.configProvider.Clusters {
-		newAnnotation[e.configProvider.GetAnnotation(cluster.ClusterNameCanary)] = fmt.Sprintf("%d", percent)                          //nolint:lll
+		newAnnotation[e.configProvider.GetAnnotation(cluster.GetClusterNameCanary())] = fmt.Sprintf("%d", percent)                     //nolint:lll
 		newAnnotation[e.configProvider.GetAnnotation(cluster.ClusterName)] = fmt.Sprintf("%d", types.CanaryProviderPercentMax-percent) //nolint:lll
 	}
 
@@ -161,7 +171,7 @@ func (e ServiceMesh) SetCanaryPercent(ctx context.Context, percent types.CanaryP
 
 	// update configmap by selector
 	for _, configMapSelector := range e.configProvider.ConfigMapsSelector {
-		configMapList, err := e.client.CoreV1().ConfigMaps(e.config.Namespace).List(ctx, metav1.ListOptions{
+		configMapList, err := client.Client.KubeClient().CoreV1().ConfigMaps(e.config.Namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: configMapSelector,
 		})
 		if err != nil {
@@ -189,14 +199,13 @@ func NewServiceMesh(config types.ServiceMeshConfig) (*ServiceMesh, error) {
 	servicemesh := ServiceMesh{
 		config:         config,
 		configProvider: envoyControlPlaneProviderConfig,
-		client:         client.Client.KubeClient(),
 	}
 
 	return &servicemesh, nil
 }
 
 func (e *ServiceMesh) updateConfigMapAnnotation(ctx context.Context, name string, annotations map[string]string) error { //nolint:lll,dupl
-	cm, err := e.client.CoreV1().ConfigMaps(e.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	cm, err := client.Client.KubeClient().CoreV1().ConfigMaps(e.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "error get configname %s", name)
 	}
@@ -212,7 +221,7 @@ func (e *ServiceMesh) updateConfigMapAnnotation(ctx context.Context, name string
 	}
 
 	err = wait.ExponentialBackoff(retry.DefaultBackoff, func() (bool, error) {
-		_, err = e.client.CoreV1().ConfigMaps(e.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+		_, err = client.Client.KubeClient().CoreV1().ConfigMaps(e.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
 		if err != nil {
 			log.WithError(err).Warn(apierrorrs.ReasonForError(err))
 		}
@@ -236,7 +245,7 @@ func (e *ServiceMesh) updateConfigMapAnnotation(ctx context.Context, name string
 }
 
 func (e *ServiceMesh) updateEndpointAnnotation(ctx context.Context, name string, annotations map[string]string) error { //nolint:lll,dupl
-	cm, err := e.client.CoreV1().Endpoints(e.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	cm, err := client.Client.KubeClient().CoreV1().Endpoints(e.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "error get endpoint %s", name)
 	}
@@ -252,7 +261,7 @@ func (e *ServiceMesh) updateEndpointAnnotation(ctx context.Context, name string,
 	}
 
 	err = wait.ExponentialBackoff(retry.DefaultBackoff, func() (bool, error) {
-		_, err = e.client.CoreV1().Endpoints(e.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+		_, err = client.Client.KubeClient().CoreV1().Endpoints(e.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
 		if err != nil {
 			log.WithError(err).Warn(apierrorrs.ReasonForError(err))
 		}
@@ -275,7 +284,7 @@ func (e *ServiceMesh) updateEndpointAnnotation(ctx context.Context, name string,
 	return nil
 }
 
-func (e *ServiceMesh) SetServiceABTestMode(ctx context.Context, service string, isStart bool) error {
+func (e *ServiceMesh) SetServiceCanaryMode(ctx context.Context, service string, isStart bool) error {
 	newAnnotation := map[string]string{
 		annotationCanaryEnabled: strconv.FormatBool(isStart),
 	}
@@ -286,4 +295,10 @@ func (e *ServiceMesh) SetServiceABTestMode(ctx context.Context, service string, 
 	}
 
 	return nil
+}
+
+func (e *ServiceMesh) SetServiceABTestMode(ctx context.Context, service string, isStart bool) error {
+	err := e.SetServiceCanaryMode(ctx, service, isStart)
+
+	return errors.Wrap(err, "failed to set service abtest mode")
 }
