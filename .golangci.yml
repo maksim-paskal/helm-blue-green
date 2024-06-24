@@ -8,6 +8,7 @@ linters:
   - varnamelen
   - gochecknoglobals
   - exhaustruct
-  - exhaustivestruct
   - musttag
   - depguard
+  - gomnd
+  - execinquery

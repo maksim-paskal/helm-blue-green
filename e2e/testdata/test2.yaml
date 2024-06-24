@@ -4,6 +4,9 @@ version:
 
 minReplicas: 2
 
+# need for test3.yaml
+deleteOrigins: false
+
 hpa:
   minReplicas: 2
   maxReplicas: 10
@@ -42,10 +45,29 @@ prometheus:
 
 canary:
   enabled: true
+  qualitygate:
+    totalSamplesMetrics:
+    - metric: "envoy_cluster_upstream_rq{envoy_cluster_name='zz-http-echo1'}"
+    - metric: "envoy_cluster_upstream_rq{envoy_cluster_name='zz-http-echo2'}"
+    badSamplesMetrics:
+    - metric: "envoy_cluster_upstream_rq{envoy_cluster_name='zz-http-echo1',envoy_response_code!~'[1-4]..'}"
+    - metric: "envoy_cluster_upstream_rq{envoy_cluster_name='zz-http-echo2',envoy_response_code!~'[1-4]..'}"
   phase1:
+    strategy: ABTestStrategy
     maxExecutionTimeSeconds: 10
+    qualitygate:
+      errorBudgetCount: 1
+      totalSamplesMetrics:
+      - metric: "envoy_cluster_canary_upstream_rq{envoy_cluster_name='zz-http-echo1'}"
+      - metric: "envoy_cluster_canary_upstream_rq{envoy_cluster_name='zz-http-echo2'}"
+      badSamplesMetrics:
+      - metric: "envoy_cluster_canary_upstream_rq{envoy_cluster_name='zz-http-echo1',envoy_response_code!~'[1-4]..'}"
+      - metric: "envoy_cluster_canary_upstream_rq{envoy_cluster_name='zz-http-echo2',envoy_response_code!~'[1-4]..'}"
   phase2:
     maxExecutionTimeSeconds: 10
+    qualitygate:
+      errorBudgetCount: 2
+    waitErrorBudgetPeriod: false
   serviceMeshConfig: |-
     configMaps:
     - http-echo1

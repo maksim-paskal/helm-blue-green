@@ -39,20 +39,13 @@ const (
 func Start(ctx context.Context) error { //nolint:funlen
 	defer utils.TimeTrack("internal.Start", time.Now())
 
-	err := client.Init()
-	if err != nil {
+	if err := client.Init(); err != nil {
 		return errors.Wrap(err, "error initializing client")
-	}
-
-	if err := config.Load(ctx); err != nil {
-		return errors.Wrap(err, "error loading config")
 	}
 
 	if err := prometheus.Init(); err != nil {
 		return errors.Wrap(err, "error initializing prometheus")
 	}
-
-	log.Debugf("Using config:\n%s", config.Get().String())
 
 	values := config.Get()
 
@@ -61,6 +54,7 @@ func Start(ctx context.Context) error { //nolint:funlen
 		Namespace:   values.Namespace,
 		Environment: values.Environment,
 		Version:     values.Version.Value,
+		Metadata:    config.Get().Metadata,
 	}
 
 	startTime := time.Now()
@@ -301,7 +295,7 @@ func createNewVersions(ctx context.Context, values *config.Type) error {
 	return getProcessedErrors(&processErrors)
 }
 
-func updateServicesSelector(ctx context.Context, values *config.Type, version types.Version) error {
+func updateServicesSelector(ctx context.Context, values *config.Type, version *types.Version) error {
 	var processErrors sync.Map
 
 	var wg sync.WaitGroup
@@ -406,12 +400,17 @@ func turnOffCanary(ctx context.Context, values *config.Type) error {
 
 	switch values.Canary.Phase1.Strategy {
 	case config.CanaryPhase1CanaryStrategy:
-		err := values.Canary.GetServiceMesh().SetCanaryPercent(ctx, types.CanaryProviderPercentMin)
+		err := canary.SetServiceCanaryMode(ctx, values, false)
+		if err != nil {
+			return errors.Wrap(err, "error stopping canary service")
+		}
+
+		err = values.Canary.GetServiceMesh().SetCanaryPercent(ctx, types.CanaryProviderPercentMin)
 		if err != nil {
 			return errors.Wrap(err, "error setting canary percent")
 		}
 	case config.CanaryPhase1ABTestStrategy:
-		err := canary.SetServiceABTestMode(ctx, values, false)
+		err := canary.SetServiceCanaryMode(ctx, values, false)
 		if err != nil {
 			return errors.Wrap(err, "error stopping ab test")
 		}

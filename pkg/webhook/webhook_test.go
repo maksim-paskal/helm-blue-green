@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/maksim-paskal/helm-blue-green/pkg/config"
@@ -39,7 +40,7 @@ func getHandler() http.Handler {
 }
 
 func handler001(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet || r.Header.Get("test1") != "value1-v1" {
+	if r.Method != http.MethodGet || r.Header.Get("Test1") != "value1-v1" {
 		w.WriteHeader(http.StatusBadRequest)
 
 		return
@@ -70,7 +71,7 @@ func handler001(w http.ResponseWriter, r *http.Request) {
 }
 
 func handler002(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || r.Header.Get("test2") != "value2" {
+	if r.Method != http.MethodPost || r.Header.Get("Test2") != "value2" {
 		w.WriteHeader(http.StatusBadRequest)
 
 		return
@@ -86,13 +87,14 @@ func TestHooks(t *testing.T) {
 
 	tests = append(tests, &config.WebHook{
 		URL:     ts.URL + "/handler-001?version={{ .Version }}",
-		Headers: map[string]string{"test1": "value1-{{ .Version }}"},
+		Method:  "GET",
+		Headers: map[string]string{"Test1": "value1-{{ .Version }}"},
 		Body:    "test-{{ .Version }}",
 	})
 
 	tests = append(tests, &config.WebHook{
 		URL:     ts.URL + "/handler-002",
-		Headers: map[string]string{"test2": "value2"},
+		Headers: map[string]string{"Test2": "value2"},
 		Method:  "POST",
 	})
 
@@ -104,9 +106,13 @@ func TestHooks(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		if err := webhook.Send(ctx, event, test); err != nil {
-			t.Error(err)
-		}
+		t.Run(test.URL, func(t *testing.T) {
+			t.Parallel()
+
+			if err := webhook.Send(ctx, event, test); err != nil {
+				t.Error(err)
+			}
+		})
 	}
 }
 
@@ -121,6 +127,9 @@ func TestEventFormat(t *testing.T) {
 		Version:     "4",
 		OldVersion:  "5",
 		Duration:    "6",
+		Metadata: map[string]string{
+			"testKey": "testValue",
+		},
 	}
 
 	metrics.SetTotal(1, 1)
@@ -129,13 +138,13 @@ func TestEventFormat(t *testing.T) {
 	event.Metrics = metrics.GetMetricsMap()
 
 	tests := make(map[string]string, 0)
-	tests["{{ .GetQueryString }}"] = "event.Duration=6&event.Environment=3&event.Metrics.Phase1Bad=1&event.Metrics.Phase1Total=1&event.Name=1&event.Namespace=2&event.OldVersion=5&event.Type=success&event.Version=4" //nolint:lll
-	tests["{{ .Type }}"] = "success"
-	tests["{{ .Version }}"] = "4"
-	tests["{{ .GetJSON }}"] = `{"Type":"success","Name":"1","Namespace":"2","Environment":"3","Version":"4","OldVersion":"5","Duration":"6","Metrics":{"Phase1Bad":"1","Phase1Total":"1","Phase2Bad":"0","Phase2Total":"0"}}` //nolint:lll
-	tests["WW{{ .Version }}WW"] = "WW4WW"
-	tests["test"] = "test"
-	tests[""] = ""
+	tests["{{ .GetQueryString }}"] = "event.Duration=6&event.Environment=3&event.Metadata.testKey=testValue&event.Metrics.Phase1Bad=1&event.Metrics.Phase1Total=1&event.Name=1&event.Namespace=2&event.OldVersion=5&event.Type=success&event.Version=4"          //nolint:lll
+	tests["{{ .Type }}"] = "success"                                                                                                                                                                                                                             //nolint:lll
+	tests["{{ .Version }}"] = "4"                                                                                                                                                                                                                                //nolint:lll
+	tests["{{ .GetJSON }}"] = `{"Type":"success","Name":"1","Namespace":"2","Environment":"3","Version":"4","OldVersion":"5","Duration":"6","Metrics":{"Phase1Bad":"1","Phase1Total":"1","Phase2Bad":"0","Phase2Total":"0"},"Metadata":{"testKey":"testValue"}}` //nolint:lll
+	tests["WW{{ .Version }}WW"] = "WW4WW"                                                                                                                                                                                                                        //nolint:lll
+	tests["test"] = "test"                                                                                                                                                                                                                                       //nolint:lll
+	tests[""] = ""                                                                                                                                                                                                                                               //nolint:lll
 
 	for key, value := range tests {
 		if result, err := event.FormatValue(key); err != nil {
@@ -169,5 +178,44 @@ func TestGetQueryStringEmoji(t *testing.T) {
 
 	if event.Type != webhook.EventTypeFailed {
 		t.Errorf("expected %s, got %s", webhook.EventTypeSuccess, event.Type)
+	}
+}
+
+func TestSlackPayload(t *testing.T) {
+	t.Parallel()
+
+	slackHook := os.Getenv("TEST_SLACK_HOOK")
+
+	if slackHook == "" {
+		t.Skip("no slack hook")
+	}
+
+	test := &config.WebHook{
+		URL:  slackHook,
+		Body: "{{ .GetSlackPayload }}",
+	}
+
+	events := make([]webhook.Event, 0)
+
+	events = append(events, webhook.Event{
+		Environment: "env1",
+		Name:        "name1",
+		Type:        webhook.EventTypeSuccess,
+		OldVersion:  "old1",
+		Version:     "new1",
+	})
+
+	events = append(events, webhook.Event{
+		Environment: "env2",
+		Name:        "name2",
+		Type:        webhook.EventTypeFailed,
+		OldVersion:  "old2",
+		Version:     "new2",
+	})
+
+	for _, event := range events {
+		if err := webhook.Send(ctx, event, test); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -43,6 +43,11 @@ func Init() error {
 	return nil
 }
 
+// Client init for tests.
+func FakeInit() {
+	Client = &client{}
+}
+
 func newClient() (*client, error) {
 	client := client{
 		stopCh: make(chan struct{}),
@@ -57,6 +62,7 @@ func newClient() (*client, error) {
 		}
 	} else {
 		log.Info("No kubeconfig file use incluster")
+
 		client.restconfig, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, errors.Wrap(err, "error building incluster config")

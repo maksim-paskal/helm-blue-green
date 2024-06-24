@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func createPdb(ctx context.Context, newDeploy *appsv1.Deployment, pdbConfig config.Pdb, values *config.Type) error {
+func createPdb(ctx context.Context, newDeploy *appsv1.Deployment, pdbConfig *config.Pdb, values *config.Type) error {
 	pdb := &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   newDeploy.Name,

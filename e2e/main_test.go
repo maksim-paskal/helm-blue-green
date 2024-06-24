@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/maksim-paskal/helm-blue-green/internal"
+	"github.com/maksim-paskal/helm-blue-green/pkg/config"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -56,6 +57,16 @@ func TestApplication(t *testing.T) {
 		log.Infof("Starting test %s", test)
 
 		if err := flag.Set("config", test); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := config.Load(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Log(config.Get().String())
+
+		if err := config.Validate(ctx); err != nil {
 			t.Fatal(err)
 		}
 
