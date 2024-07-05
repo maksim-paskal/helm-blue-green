@@ -21,7 +21,7 @@ import (
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 )
 
-func TestConfig(t *testing.T) {
+func TestConfig(t *testing.T) { //nolint:cyclop
 	ctx := context.Background()
 
 	t.Setenv("NAMESPACE", "default")
@@ -62,6 +62,24 @@ func TestConfig(t *testing.T) {
 
 	if want := int32(22); want != config.Get().Deployments[1].MinReplicas {
 		t.Fatalf("MinReplicas for 0 is not %d", want)
+	}
+
+	if !(config.Get().Pdb.MinAvailable == 0 && config.Get().Pdb.MaxUnavailable == 2) {
+		t.Fatal("Pdb is not 0/2")
+	}
+
+	d := config.Get().Deployments
+
+	if len(d) != 2 {
+		t.Fatal("Deployments length is not 2")
+	}
+
+	if !(d[0].Pdb.MinAvailable == 0 && d[0].Pdb.MaxUnavailable == 2) {
+		t.Fatal("Pdb is not 0/2")
+	}
+
+	if !(d[1].Pdb.MinAvailable == 3 && d[1].Pdb.MaxUnavailable == 0) {
+		t.Fatal("Pdb is not 3/0")
 	}
 }
 
