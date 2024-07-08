@@ -1,8 +1,15 @@
 name: testName
 
+pdb:
+  minAvailable: 1
+  maxUnavailable: 2
+
 deployments:
 - name: test01
 - name: test02
+  pdb:
+    minAvailable: 3
+    maxUnavailable: 0
 
 services:
 - name: test01

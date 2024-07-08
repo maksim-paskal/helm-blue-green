@@ -476,7 +476,7 @@ type Type struct {
 	Metadata                 map[string]string
 }
 
-func (t *Type) Normalize() {
+func (t *Type) Normalize() { //nolint:cyclop
 	setBudgetInSeconds := func(a []*PromQLMetric) {
 		localDefaultBudgetInSeconds := defaultBudgetInSeconds
 
@@ -498,6 +498,11 @@ func (t *Type) Normalize() {
 	setBudgetInSeconds(t.Canary.Phase2.QualityGate.BadSamplesMetrics)
 	setBudgetInSeconds(t.Canary.Phase2.QualityGate.TotalSamplesMetrics)
 
+	// if user set both values, we need to use only one
+	if t.Pdb.MinAvailable > 0 && t.Pdb.MaxUnavailable > 0 {
+		t.Pdb.MinAvailable = 0
+	}
+
 	for _, deployment := range t.Deployments {
 		if deployment.MinReplicas == 0 {
 			deployment.MinReplicas = t.MinReplicas
@@ -510,6 +515,12 @@ func (t *Type) Normalize() {
 		if deployment.Hpa != nil {
 			if deployment.Hpa.AverageUtilization == 0 {
 				deployment.Hpa.AverageUtilization = defaultAverageUtilization
+			}
+		}
+
+		if deployment.Pdb != nil {
+			if deployment.Pdb.MinAvailable > 0 && deployment.Pdb.MaxUnavailable > 0 {
+				deployment.Pdb.MinAvailable = 0
 			}
 		}
 	}
