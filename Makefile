@@ -13,13 +13,13 @@ lint:
 build:
 	git tag -d `git tag -l "helm-blue-green-*"`
 	git tag -d `git tag -l "helm-chart-*"`
-	go run github.com/goreleaser/goreleaser@latest build --clean --snapshot --skip=validate
+	go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --skip=validate
 	mv ./dist/helm-blue-green_linux_amd64_v1/helm-blue-green ./helm-blue-green
 	docker buildx build --platform=linux/amd64 --pull --push . -t $(image)
 promote-to-beta:
 	git tag -d `git tag -l "helm-blue-green-*"`
 	git tag -d `git tag -l "helm-chart-*"`
-	go run github.com/goreleaser/goreleaser@latest release --clean --snapshot
+	go run github.com/goreleaser/goreleaser/v2@latest release --clean --snapshot
 	# rename helm-blue-green to beta + hash
 	docker tag paskalmaksim/helm-blue-green:beta-arm64 paskalmaksim/helm-blue-green:$(beta)-arm64
 	docker tag paskalmaksim/helm-blue-green:beta-amd64 paskalmaksim/helm-blue-green:$(beta)-amd64
