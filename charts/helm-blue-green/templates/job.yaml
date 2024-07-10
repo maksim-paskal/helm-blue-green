@@ -12,8 +12,11 @@ spec:
 {{ if .Values.labels }}
 {{ toYaml .Values.labels | indent 8 }}
 {{ end }}
-{{ if .Values.annotations }}
       annotations:
+        # well known annotations to prevent disruption
+        karpenter.sh/do-not-disrupt: "true"
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+{{ if .Values.annotations }}
 {{ toYaml .Values.annotations | indent 8 }}
 {{ end }}
     spec:
