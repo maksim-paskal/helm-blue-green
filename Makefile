@@ -10,6 +10,7 @@ lint:
 	ct lint --all
 	ct lint --charts test/deploy
 	ct lint --charts e2e/chart
+	helm template ./charts/helm-blue-green | kubectl apply --dry-run=server -f -
 build:
 	git tag -d `git tag -l "helm-blue-green-*"`
 	git tag -d `git tag -l "helm-chart-*"`

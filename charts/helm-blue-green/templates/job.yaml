@@ -41,12 +41,6 @@ spec:
         runAsNonRoot: true
         runAsUser: 30001
         runAsGroup: 30001
-        privileged: false
-        readOnlyRootFilesystem: true
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop:
-          - ALL
       volumes:
       {{ if .Values.prometheus.enabled }}
       - name: prometheus-data
@@ -77,6 +71,13 @@ spec:
       - name: helm-blue-green
         image: {{ printf "%s/%s:%s" (default .Values.image.registry .Values.global.imageRegistry) .Values.image.repository .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          privileged: false
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
         resources:
 {{ toYaml .Values.resources | indent 10 }}
         env:
