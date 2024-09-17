@@ -21,7 +21,7 @@ import (
 	"github.com/maksim-paskal/helm-blue-green/pkg/types"
 )
 
-func TestConfig(t *testing.T) { //nolint:cyclop
+func TestConfig(t *testing.T) { //nolint:cyclop,funlen
 	ctx := context.Background()
 
 	t.Setenv("NAMESPACE", "default")
@@ -42,6 +42,10 @@ func TestConfig(t *testing.T) { //nolint:cyclop
 
 	if err := config.Validate(ctx); err != nil {
 		t.Fatal(err)
+	}
+
+	if want := "testName/version"; want != config.Get().Version.Key() {
+		t.Fatalf("Version is not %s, got %s", want, config.Get().Version.Key())
 	}
 
 	if want := "default"; want != config.Get().Namespace {

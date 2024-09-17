@@ -435,20 +435,20 @@ func (p *Prometheus) GetEndpoint(action string) string {
 }
 
 func (p *Prometheus) GetReadyWaitStep() time.Duration {
-	return time.Duration(p.ReadyWaitStepSeconds) * time.Second
+	return time.Duration(p.ReadyWaitStepSeconds) * time.Second //nolint:gosec
 }
 
 func (p *Prometheus) GetScrapeInterval() time.Duration {
-	return time.Duration(p.ScrapeIntervalSeconds) * time.Second
+	return time.Duration(p.ScrapeIntervalSeconds) * time.Second //nolint:gosec
 }
 
 // Prometheus need some time to save scraped metrics, so we need to wait some time before we can get metrics.
 func (p *Prometheus) GetTotalScrapeInterval() time.Duration {
-	return time.Duration(p.ScrapeIntervalSeconds+p.ScrapeWaitSeconds) * time.Second
+	return time.Duration(p.ScrapeIntervalSeconds+p.ScrapeWaitSeconds) * time.Second //nolint:gosec
 }
 
 func (p *Prometheus) GetCreateConfigInterval() time.Duration {
-	return time.Duration(p.CreateConfigIntervalSeconds) * time.Second
+	return time.Duration(p.CreateConfigIntervalSeconds) * time.Second //nolint:gosec
 }
 
 type Type struct {
@@ -806,12 +806,12 @@ func Load(_ context.Context) error { //nolint:cyclop
 		return errors.Wrap(err, "error unmarshaling config file")
 	}
 
-	if len(config.Version.Scope) == 0 && len(config.Deployments) > 0 {
-		config.Version.Scope = config.Deployments[0].Name
-	}
-
 	if len(config.Name) == 0 && len(config.Deployments) > 0 {
 		config.Name = config.Deployments[0].Name
+	}
+
+	if len(config.Version.Scope) == 0 && len(config.Deployments) > 0 {
+		config.Version.Scope = config.Name
 	}
 
 	if err := loadFromEnv(); err != nil {
