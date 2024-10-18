@@ -4,13 +4,14 @@ global:
 image:
   registry: docker.io
   repository: paskalmaksim/helm-blue-green
-  tag: v1.1.4
+  tag: v1.1.5
   pullPolicy: IfNotPresent
 
 priorityClassName: ""
 labels: {}
 annotations: {}
-nodeSelector: {}
+nodeSelector:
+  kubernetes.io/os: linux
 affinity: []
 tolerations: []
 
