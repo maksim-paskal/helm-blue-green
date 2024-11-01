@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ printf "%s-%d" (include "helm-blue-green.fullname" .) .Release.Revision }}
+  labels:
+    app: {{ include "helm-blue-green.fullname" . }}
 spec:
   backoffLimit: {{ .Values.backoffLimit }}
   activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
