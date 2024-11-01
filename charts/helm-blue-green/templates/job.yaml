@@ -19,6 +19,9 @@ spec:
 {{ if .Values.annotations }}
 {{ toYaml .Values.annotations | indent 8 }}
 {{ end }}
+{{ if .Values.annotationsTemplated }}
+{{ tpl (toYaml .Values.annotationsTemplated) . | indent 8 }}
+{{ end }}
     spec:
       restartPolicy: {{ .Values.restartPolicy }}
       serviceAccountName: {{ include "helm-blue-green.fullname" . }}

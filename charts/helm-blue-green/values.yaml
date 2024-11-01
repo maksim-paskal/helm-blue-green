@@ -10,6 +10,7 @@ image:
 priorityClassName: ""
 labels: {}
 annotations: {}
+annotationsTemplated: {}
 nodeSelector:
   kubernetes.io/os: linux
 affinity: []
