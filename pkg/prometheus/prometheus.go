@@ -71,10 +71,8 @@ func Init() error {
 
 	if len(config.Get().Prometheus.AuthUser) > 0 {
 		prometheusConfig.RoundTripper = promConfig.NewBasicAuthRoundTripper(
-			config.Get().Prometheus.AuthUser,
-			promConfig.Secret(config.Get().Prometheus.AuthPassword),
-			"",
-			"",
+			promConfig.NewInlineSecret(config.Get().Prometheus.AuthUser),
+			promConfig.NewInlineSecret(config.Get().Prometheus.AuthPassword),
 			api.DefaultRoundTripper,
 		)
 	}
