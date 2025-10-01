@@ -72,7 +72,7 @@ func (c *Cluster) GetClusterNameCanary() string {
 	return c.ClusterNameCanary
 }
 
-func (e ServiceMesh) GetPromQL(promQLType types.CanaryProviderPromQLType, budgetSeconds int) (*types.CanaryProviderMetrics, error) { //nolint:lll,funlen
+func (e *ServiceMesh) GetPromQL(promQLType types.CanaryProviderPromQLType, budgetSeconds int) (*types.CanaryProviderMetrics, error) { //nolint:lll,funlen
 	result := types.CanaryProviderMetrics{
 		TotalSamplesQLs: make([]string, 0),
 		BadSamplesQLs:   make([]string, 0),
@@ -154,7 +154,7 @@ type ServiceMesh struct {
 	configProvider Config
 }
 
-func (e ServiceMesh) SetCanaryPercent(ctx context.Context, percent types.CanaryProviderPercent) error {
+func (e *ServiceMesh) SetCanaryPercent(ctx context.Context, percent types.CanaryProviderPercent) error {
 	newAnnotation := make(map[string]string)
 
 	for _, cluster := range e.configProvider.Clusters {

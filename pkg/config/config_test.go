@@ -13,7 +13,6 @@ limitations under the License.
 package config_test
 
 import (
-	"context"
 	"flag"
 	"testing"
 
@@ -22,7 +21,7 @@ import (
 )
 
 func TestConfig(t *testing.T) { //nolint:cyclop,funlen
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Setenv("NAMESPACE", "default")
 	t.Setenv("VERSION", "test-version-1")
