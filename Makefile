@@ -1,4 +1,4 @@
-KUBECONFIG=$(HOME)/.kube/dev
+export KUBECONFIG=$(HOME)/.kube/dev
 tag=dev
 version=v1
 image=paskalmaksim/helm-blue-green:$(tag)
